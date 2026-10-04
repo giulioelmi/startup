@@ -1,0 +1,42 @@
+{
+  "name": "transfer-ai",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "postinstall": "cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/",
+    "test": "vitest run",
+    "epic:key": "node scripts/gen-epic-key.mjs"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.71",
+    "@ai-sdk/google": "^4.0.87",
+    "@ai-sdk/openai": "^4.0.83",
+    "@ai-sdk/openai-compatible": "^3.0.62",
+    "ai": "^7.0.127",
+    "better-sqlite3": "^13.0.3",
+    "jose": "^6.2.12",
+    "next": "16.3.8",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "twilio": "^6.1.2",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.8",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^5.0.3"
+  }
+}
