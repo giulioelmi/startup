@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
-import { PDFDocument, PDFName, PDFString } from "pdf-lib";
+import { PDFDocument, PDFName, PDFString, StandardFonts } from "pdf-lib";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { detectFields, fillValues, renderFilled, toPdf, type FormField } from "@/lib/forms";
+import { detectFields, fillValues, readForm, renderFilled, toPdf, type FormField } from "@/lib/forms";
 import { buildPacket } from "@/lib/fax";
 import { HOSPITALS } from "@/lib/hospitals";
 import { summarize } from "@/lib/summary";
@@ -66,6 +66,34 @@ test("detects fillable fields and uses the tooltip as the label", async () => {
     { name: "code_status", label: "code_status", type: "text" },
     { name: "icu", label: "icu", type: "checkbox" },
   ]);
+});
+
+test("cryptic field names get the printed label next to them", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const form = doc.getForm();
+  page.drawText("Admitting diagnosis:", { x: 50, y: 706, size: 10, font }); // left of the field
+  form.createTextField("Text1").addToPage(page, { x: 160, y: 700, width: 300, height: 20 });
+  page.drawText("Accepting physician", { x: 50, y: 662, size: 9, font }); // just above the field
+  form.createTextField("Text2").addToPage(page, { x: 50, y: 635, width: 300, height: 20 });
+  const fields = await detectFields(await doc.save());
+  expect(fields.map((f) => f.label)).toEqual(["Admitting diagnosis", "Accepting physician"]);
+});
+
+test("a scanned form is read by the AI from page images", async () => {
+  const doc = await PDFDocument.create();
+  doc.addPage([612, 792]).drawText("Cedars-Sinai transfer request    Diagnosis: ________", { x: 50, y: 700, size: 12 });
+  askForObject.mockResolvedValueOnce({
+    title: "Non-EMTALA Request for Transfer",
+    hospital: "cedars",
+    fields: [{ label: "Diagnosis", type: "text", page: 0, box: [100, 500, 125, 900] }],
+  });
+  const result = await readForm(await doc.save());
+  expect(askForObject.mock.lastCall![3][0].subarray(1, 4).toString()).toBe("PNG"); // the model got the page image
+  expect(result).toMatchObject({ title: "Non-EMTALA Request for Transfer", hospitalId: "cedars" });
+  // 0-1000 box -> PDF points, top-left origin
+  expect(result.fields[0]).toEqual({ name: "ai_1", label: "Diagnosis", type: "text", box: { page: 0, x: 306, y: 79.2, width: 244.8, height: 19.8 } });
 });
 
 test("fills a fillable PDF from AI values, one value per field", async () => {

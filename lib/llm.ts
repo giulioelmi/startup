@@ -33,12 +33,18 @@ export function getModel(): LanguageModel {
   }
 }
 
-export async function askForObject<T>(schema: z.ZodType<T>, system: string, prompt: string): Promise<T> {
+// `images` (e.g. pages of a scanned form) need a vision-capable model.
+export async function askForObject<T>(schema: z.ZodType<T>, system: string, prompt: string, images: Buffer[] = []): Promise<T> {
   const { output } = await generateText({
     model: getModel(),
     output: Output.object({ schema }),
     system,
-    prompt,
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: prompt }, ...images.map((data) => ({ type: "file" as const, mediaType: "image/png", data }))],
+      },
+    ],
   });
   return output;
 }

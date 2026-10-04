@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS forms (
   name TEXT NOT NULL,
   pdf BLOB NOT NULL,
   fields TEXT NOT NULL DEFAULT '[]',  -- JSON FormField[]
+  status TEXT NOT NULL DEFAULT 'reading',  -- reading | ready | failed (AI finding the fields)
+  error TEXT,
   source TEXT NOT NULL,          -- upload | email | fax
   sender TEXT,
   received_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -37,7 +39,9 @@ CREATE TABLE IF NOT EXISTS filled_forms (
   id INTEGER PRIMARY KEY,
   transfer_id INTEGER NOT NULL,
   form_id INTEGER NOT NULL,
-  values_json TEXT NOT NULL,     -- JSON FieldValue[]
+  values_json TEXT NOT NULL DEFAULT '[]',  -- JSON FieldValue[]
+  status TEXT NOT NULL DEFAULT 'filling',  -- filling | ready | failed
+  error TEXT,
   approved_by TEXT,
   approved_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))

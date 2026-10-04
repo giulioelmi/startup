@@ -9,15 +9,15 @@ import {
   PDFTextField,
   StandardFonts,
   rgb,
-  type PDFField,
 } from "pdf-lib";
 import { db } from "./db";
 import { askForObject } from "./llm";
-import type { Hospital } from "./hospitals";
+import { HOSPITALS, type Hospital } from "./hospitals";
+import { pageImages, pageText, type TextItem } from "./pdf-pages";
 import type { Transfer } from "./transfers";
 
-// A fillable PDF field (from the PDF itself), or a box someone placed on a
-// scanned/faxed page in the field editor (`box` set, PDF points, top-left origin).
+// A fillable PDF field (from the PDF itself), or a box on a scanned/faxed page
+// found by the AI (`box` set, PDF points, top-left origin).
 export type FormField = {
   name: string;
   label: string;
@@ -35,6 +35,8 @@ export type FormRow = {
   name: string;
   pdf: Buffer;
   fields: string;
+  status: "reading" | "ready" | "failed";
+  error: string | null;
   source: string;
   sender: string | null;
   received_at: string;
@@ -43,7 +45,7 @@ export type FormRow = {
 export const getForm = (id: number) => db.prepare("SELECT * FROM forms WHERE id = ?").get(id) as FormRow | undefined;
 
 export function listForms(hospitalId?: string) {
-  const sql = "SELECT id, hospital_id, name, fields, source, sender, received_at FROM forms";
+  const sql = "SELECT id, hospital_id, name, fields, status, error, source, sender, received_at FROM forms";
   const rows = hospitalId
     ? db.prepare(`${sql} WHERE hospital_id = ? ORDER BY id DESC`).all(hospitalId)
     : db.prepare(`${sql} ORDER BY id DESC`).all();
@@ -51,12 +53,12 @@ export function listForms(hospitalId?: string) {
 }
 
 // Store an incoming form (upload, email attachment or received fax).
+// The forms agent (lib/agent.ts) then reads and fills it.
 export async function saveForm(input: { name: string; bytes: Uint8Array; mime: string; hospitalId: string | null; source: string; sender?: string }) {
   const pdf = await toPdf(input.bytes, input.mime);
-  const fields = await detectFields(pdf);
   const r = db
-    .prepare("INSERT INTO forms (hospital_id, name, pdf, fields, source, sender) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(input.hospitalId, input.name, Buffer.from(pdf), JSON.stringify(fields), input.source, input.sender ?? null);
+    .prepare("INSERT INTO forms (hospital_id, name, pdf, source, sender) VALUES (?, ?, ?, ?, ?)")
+    .run(input.hospitalId, input.name, Buffer.from(pdf), input.source, input.sender ?? null);
   return Number(r.lastInsertRowid);
 }
 
@@ -71,20 +73,100 @@ export async function toPdf(bytes: Uint8Array, mime: string): Promise<Uint8Array
   return doc.save();
 }
 
-function fieldType(f: PDFField): FormField | null {
-  // The tooltip (/TU) is usually the human-readable label.
-  const tooltip = f.acroField.dict.get(PDFName.of("TU"))?.toString().replace(/^\(|\)$/g, "");
-  const base = { name: f.getName(), label: tooltip || f.getName() };
-  if (f instanceof PDFTextField) return { ...base, type: "text" };
-  if (f instanceof PDFCheckBox) return { ...base, type: "checkbox" };
-  if (f instanceof PDFDropdown || f instanceof PDFOptionList || f instanceof PDFRadioGroup)
-    return { ...base, type: "choice", options: f.getOptions() };
-  return null; // buttons, signatures
+// ---------- Reading a form: which blanks does it have? ----------
+
+export async function readForm(pdf: Uint8Array): Promise<{ fields: FormField[]; title: string | null; hospitalId: string | null }> {
+  const fillable = await detectFields(pdf);
+  if (fillable.length) return { fields: fillable, title: null, hospitalId: null };
+  return readFormWithAI(pdf); // scanned / faxed / flat PDF
 }
 
+// Fillable PDFs: take the fields from the PDF. Field names are often cryptic
+// ("Text12"), so the label is the tooltip or the printed text next to the field.
 export async function detectFields(pdf: Uint8Array): Promise<FormField[]> {
   const doc = await PDFDocument.load(pdf, { ignoreEncryption: true });
-  return doc.getForm().getFields().map(fieldType).filter((f): f is FormField => f !== null);
+  const fields = doc.getForm().getFields();
+  if (!fields.length) return [];
+  const text = await pageText(pdf);
+  const pageRefs = doc.getPages().map((p) => p.ref);
+
+  return fields
+    .map((f): FormField | null => {
+      const tooltip = f.acroField.dict.get(PDFName.of("TU"))?.toString().replace(/^\(|\)$/g, "");
+      const widget = f.acroField.getWidgets()[0];
+      // The widget's page: its /P entry, or the page whose annotations list it.
+      const ref = widget && doc.context.getObjectRef(widget.dict);
+      const page = widget
+        ? pageRefs.findIndex((p, i) => p === widget.P() || doc.getPage(i).node.Annots()?.asArray().includes(ref!))
+        : -1;
+      const label = tooltip || (widget && page >= 0 ? nearbyText(text, page, widget.getRectangle()) : null) || f.getName();
+      const base = { name: f.getName(), label };
+      if (f instanceof PDFTextField) return { ...base, type: "text" };
+      if (f instanceof PDFCheckBox) return { ...base, type: "checkbox" };
+      if (f instanceof PDFDropdown || f instanceof PDFOptionList || f instanceof PDFRadioGroup)
+        return { ...base, type: "choice", options: f.getOptions() };
+      return null; // buttons, signatures
+    })
+    .filter((f): f is FormField => f !== null);
+}
+
+// Closest printed text to the left of, or just above, a field.
+function nearbyText(text: TextItem[], page: number, r: { x: number; y: number; width: number; height: number }) {
+  let best: { text: string; d: number } | null = null;
+  for (const t of text) {
+    if (t.page !== page || !/[a-z]{2}/i.test(t.text)) continue;
+    const left = t.x + t.width <= r.x + 4 && Math.abs(t.y - r.y) <= r.height + 4;
+    const above = t.y >= r.y + r.height - 2 && t.y <= r.y + r.height + 24 && t.x < r.x + r.width && t.x + t.width > r.x - 4;
+    if (!left && !above) continue;
+    const d = left ? r.x - (t.x + t.width) : (t.y - (r.y + r.height)) * 2;
+    if (!best || d < best.d) best = { text: t.text.replace(/[:_]+$/, "").trim(), d };
+  }
+  return best?.text ?? null;
+}
+
+const hospitalIds = HOSPITALS.map((h) => h.id) as [string, ...string[]];
+
+// Scanned or flat forms: a vision model looks at the pages and finds every blank.
+export async function readFormWithAI(pdf: Uint8Array) {
+  const images = await pageImages(pdf);
+  const sizes = (await PDFDocument.load(pdf, { ignoreEncryption: true })).getPages().map((p) => p.getSize());
+  const result = await askForObject(
+    z.object({
+      title: z.string(),
+      hospital: z.enum([...hospitalIds, "unknown"]),
+      fields: z.array(
+        z.object({
+          label: z.string(),
+          type: z.enum(["text", "checkbox"]),
+          page: z.number().int(),
+          box: z.array(z.number()).length(4).describe("[ymin, xmin, ymax, xmax], 0-1000 relative to the page image"),
+        }),
+      ),
+    }),
+    `You read hospital patient-transfer request forms (scans or faxes).
+List EVERY blank the referring hospital must fill in: lines, boxes, checkboxes, table cells.
+- label: the printed label for that blank, as written (add the section name if the label alone is ambiguous).
+- page: 0-based page index (images are given in order).
+- box: the EMPTY area where the answer is written (not the label), as [ymin, xmin, ymax, xmax] scaled 0-1000.
+- Skip signature lines and fields for the receiving hospital's own use.
+- title: the form's title. hospital: which hospital issued it, from letterhead/logo (${HOSPITALS.map((h) => `${h.id} = ${h.name}`).join("; ")}), else "unknown".`,
+    `This form has ${images.length} page(s).`,
+    images,
+  );
+
+  const fields: FormField[] = result.fields
+    .filter((f) => sizes[f.page])
+    .map((f, i) => {
+      const { width: W, height: H } = sizes[f.page];
+      const [ymin, xmin, ymax, xmax] = f.box;
+      return {
+        name: `ai_${i + 1}`,
+        label: f.label,
+        type: f.type,
+        box: { page: f.page, x: (xmin / 1000) * W, y: (ymin / 1000) * H, width: ((xmax - xmin) / 1000) * W, height: ((ymax - ymin) / 1000) * H },
+      };
+    });
+  return { fields, title: result.title || null, hospitalId: result.hospital === "unknown" ? null : result.hospital };
 }
 
 // Ask the AI to fill every field from the chart. It must not invent anything.
@@ -150,13 +232,13 @@ function drawInBox(page: Page, f: FormField, value: string, font: Font) {
     if (value === "true") page.drawText("X", { x: x + 1, y: top - height + 1, size: Math.min(height, 12), font });
     return;
   }
-  // Wrap to the box width, shrinking the font until it fits the box height.
+  // Wrap to the box width, shrinking the font until it fits; text sits on the bottom of the box (the form's line).
   for (let size = Math.min(10, height - 2); size >= 5; size--) {
     const lines = wrap(value, font, size, width);
-    if (lines.length * size * 1.15 <= height || size === 5) {
-      lines.forEach((line, i) =>
-        page.drawText(line, { x: x + 1, y: top - size - i * size * 1.15, size, font, color: rgb(0, 0, 0.6) }),
-      );
+    const lineHeight = size * 1.15;
+    if (lines.length * lineHeight <= height || size === 5) {
+      const firstBaseline = top - height + 3 + (lines.length - 1) * lineHeight;
+      lines.forEach((line, i) => page.drawText(line, { x: x + 2, y: firstBaseline - i * lineHeight, size, font, color: rgb(0, 0, 0.6) }));
       return;
     }
   }

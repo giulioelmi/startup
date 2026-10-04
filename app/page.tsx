@@ -1,55 +1,74 @@
 import Link from "next/link";
-import { searchPatients, type FhirResource } from "@/lib/epic";
-import { TEST_PATIENTS } from "@/lib/epic-test-patients";
+import { MiniProgress, Pill, STATUS_TONE } from "@/components/ui";
+import { db } from "@/lib/db";
+import { getHospital } from "@/lib/hospitals";
+import { progress } from "@/lib/progress";
+import { listTransfers } from "@/lib/transfers";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-const nameOf = (p: any) => p.name?.[0]?.text ?? [p.name?.[0]?.given?.join(" "), p.name?.[0]?.family].join(" ");
-
-export default async function PatientsPage(props: PageProps<"/">) {
-  const q = (await props.searchParams) as Record<string, string | undefined>;
-  let results: FhirResource[] | null = null;
-  let error: string | null = null;
-  if (q.family || q.given || q.birthdate) {
-    try {
-      results = await searchPatients({ family: q.family, given: q.given, birthdate: q.birthdate });
-    } catch (e) {
-      error = (e as Error).message;
-    }
-  }
+export default function Dashboard() {
+  const transfers = listTransfers();
+  const count = (s: string) => transfers.filter((t) => t.status === s).length;
+  const forms = (db.prepare("SELECT COUNT(*) n FROM forms").get() as { n: number }).n;
+  const aiFilled = (db.prepare("SELECT COUNT(*) n FROM filled_forms WHERE status = 'ready'").get() as { n: number }).n;
+  const stats = [
+    ["In progress", count("open")],
+    ["Accepted", count("accepted")],
+    ["Forms filled by AI", aiFilled],
+    ["Forms on file", forms],
+  ] as const;
 
   return (
-    <div className="space-y-6">
-      <h1>Patients (Epic)</h1>
-      <form className="card grid grid-cols-4 items-end gap-3">
-        <div><label className="label">Last name</label><input name="family" defaultValue={q.family} className="input" /></div>
-        <div><label className="label">First name</label><input name="given" defaultValue={q.given} className="input" /></div>
-        <div><label className="label">Birth date</label><input name="birthdate" type="date" defaultValue={q.birthdate} className="input" /></div>
-        <button className="btn">Search Epic</button>
-      </form>
-
-      {error && <p className="card text-red-700">{error}</p>}
-      {results && (
-        <div className="card">
-          <h2>Results</h2>
-          {results.length === 0 && <p className="text-sm text-gray-500">No patients found.</p>}
-          <ul className="divide-y">
-            {results.map((p: any) => (
-              <li key={p.id} className="py-2">
-                <Link className="text-blue-700 hover:underline" href={`/patients/${p.id}`}>{nameOf(p)}</Link>
-                <span className="ml-3 text-sm text-gray-500">DOB {p.birthDate} · {p.gender}</span>
-              </li>
-            ))}
-          </ul>
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <p className="eyebrow">Transfer center</p>
+          <h1 className="mt-1">Patient transfers</h1>
+          <p className="mt-1 text-sm text-slate-600">The AI pulls the chart, picks the hospital, fills the forms, calls and faxes. Staff review and approve.</p>
         </div>
-      )}
+      </div>
 
-      <div className="card">
-        <h2>Epic sandbox test patients</h2>
-        <ul className="grid grid-cols-3 gap-2">
-          {TEST_PATIENTS.map((p) => (
-            <li key={p.id}><Link className="text-blue-700 hover:underline" href={`/patients/${p.id}`}>{p.name}</Link></li>
-          ))}
-        </ul>
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        {stats.map(([label, n]) => (
+          <div key={label} className="card">
+            <p className="text-3xl font-bold text-slate-900">{n}</p>
+            <p className="text-sm text-slate-500">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="card overflow-hidden p-0">
+        {transfers.length === 0 ? (
+          <div className="p-10 text-center">
+            <p className="text-slate-600">No transfers yet.</p>
+            <Link href="/patients" className="btn mt-4">Start the first transfer</Link>
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="border-b bg-slate-50 text-left text-xs tracking-wide text-slate-500 uppercase">
+              <tr>
+                <th className="px-5 py-3">Patient</th>
+                <th>Reason</th>
+                <th>Receiving hospital</th>
+                <th>Progress</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {transfers.map((t) => (
+                <tr key={t.id} className="hover:bg-slate-50">
+                  <td className="px-5 py-3">
+                    <Link className="font-semibold text-slate-900 hover:text-teal-700" href={`/transfers/${t.id}`}>{t.patientName}</Link>
+                    <p className="text-xs text-slate-500">#{t.id} · {t.createdAt.slice(0, 16)}</p>
+                  </td>
+                  <td className="max-w-xs truncate pr-4">{t.reason}</td>
+                  <td>{getHospital(t.hospitalId)?.name.split(" (")[0] ?? <span className="text-slate-400">Not chosen</span>}</td>
+                  <td><MiniProgress steps={progress(t).steps} /></td>
+                  <td><Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

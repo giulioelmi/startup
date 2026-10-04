@@ -1,5 +1,6 @@
 import { beforeAll, expect, test, vi } from "vitest";
 import twilio from "twilio";
+import { db } from "@/lib/db";
 import { summarize } from "@/lib/summary";
 import { createTransfer, getTransfer, updateTransfer } from "@/lib/transfers";
 import { getTranscript } from "@/lib/voice";
@@ -67,6 +68,7 @@ test("answers a question from the chart and records an acceptance", async () => 
   expect(await res.text()).toContain("<Hangup/>");
   expect(getTransfer(id)).toMatchObject({ status: "accepted", outcomeReason: "Accepted by Dr. Smith, CCU bed 4" });
   expect(getTranscript("CA1").map((l) => l.who)).toEqual(["ai", "them", "ai", "them", "ai"]);
+  expect(db.prepare("SELECT status FROM calls WHERE call_sid = 'CA1'").get()).toEqual({ status: "completed" });
 });
 
 test("stays quiet and keeps listening through hold music", async () => {

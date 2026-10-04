@@ -3,11 +3,11 @@ import type { ClinicalSummary } from "@/lib/summary";
 function List({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
-      <h3 className="mb-1 text-sm font-semibold text-gray-700">{title}</h3>
+      <h3 className="mb-1 text-sm font-semibold text-slate-700">{title}</h3>
       {items.length ? (
         <ul className="list-disc pl-5 text-sm">{items.map((i, n) => <li key={n}>{i}</li>)}</ul>
       ) : (
-        <p className="text-sm text-gray-400">None on record</p>
+        <p className="text-sm text-slate-400">None on record</p>
       )}
     </div>
   );
@@ -16,10 +16,10 @@ function List({ title, items }: { title: string; items: string[] }) {
 export function Summary({ s }: { s: ClinicalSummary }) {
   const p = s.patient;
   return (
-    <div className="card space-y-4">
+    <div className="space-y-4 rounded-lg bg-white p-5">
       <div>
         <h2 className="mb-1">{p.name}</h2>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-slate-600">
           {p.age ?? "?"} y/o {p.sex} · DOB {p.birthDate} · MRN {p.mrn ?? "?"} · {p.language ?? ""} · {p.address ?? ""}
         </p>
       </div>

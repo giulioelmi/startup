@@ -1,4 +1,5 @@
 import { startTransfer } from "@/app/actions";
+import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
 import { audit } from "@/lib/db";
 import { getPatientRecord } from "@/lib/epic";
@@ -12,7 +13,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     summary = summarize(await getPatientRecord(id));
     audit("user", "chart.view", null, "Epic patient chart");
   } catch (e) {
-    return <p className="card text-red-700">Could not load patient from Epic: {(e as Error).message}</p>;
+    return <p className="card text-rose-700">Could not load patient from Epic: {(e as Error).message}</p>;
   }
   const d = defaultDetails();
   const field = (name: keyof typeof d, label: string, required = false) => (
@@ -23,27 +24,32 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   );
 
   return (
-    <div className="space-y-6">
-      <Summary s={summary} />
-      <form action={startTransfer} className="card space-y-3">
-        <h2>Start a transfer</h2>
+    <div className="grid gap-6 lg:grid-cols-12">
+      <form action={startTransfer} className="card space-y-4 self-start lg:col-span-5">
+        <div>
+          <p className="eyebrow">New transfer</p>
+          <h1 className="mt-1">{summary.patient.name}</h1>
+        </div>
         <input type="hidden" name="patientId" value={id} />
         <div>
           <label className="label">Reason for transfer</label>
-          <textarea name="reason" required rows={3} className="input" placeholder="e.g. Acute NSTEMI, needs cardiac cath not available here" />
+          <textarea name="reason" required rows={3} className="input" placeholder="e.g. NSTEMI with rising troponin, needs cardiac cath not available here" />
         </div>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {field("referringPhysician", "Referring physician", true)}
-          {field("callbackPhone", "Physician callback phone", true)}
-          {field("caseManager", "Case manager (name, phone)")}
+          {field("callbackPhone", "Physician callback", true)}
+          {field("levelOfCare", "Level of care", true)}
+          {field("caseManager", "Case manager")}
           {field("sendingHospital", "Sending hospital", true)}
-          {field("sendingPhone", "Sending hospital phone")}
           {field("sendingFax", "Return fax")}
-          {field("levelOfCare", "Requested level of care", true)}
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emergent" /> Emergent (EMTALA)</label>
         </div>
-        <button className="btn">Start transfer</button>
+        <input type="hidden" name="sendingPhone" value={d.sendingPhone} />
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emergent" /> Emergent (EMTALA)</label>
+        <SubmitButton busy="AI is reviewing the chart and ranking hospitals…">Start transfer →</SubmitButton>
       </form>
+      <div className="lg:col-span-7">
+        <Summary s={summary} />
+      </div>
     </div>
   );
 }

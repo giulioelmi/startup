@@ -8,6 +8,8 @@ export type Filled = {
   formName: string;
   fields: FormField[];
   values: FieldValue[];
+  status: "filling" | "ready" | "failed";
+  error: string | null;
   approvedBy: string | null;
   approvedAt: string | null;
 };
@@ -20,6 +22,8 @@ const parse = (r: any): Filled => ({
   formName: r.name,
   fields: JSON.parse(r.fields),
   values: JSON.parse(r.values_json),
+  status: r.status,
+  error: r.error,
   approvedBy: r.approved_by,
   approvedAt: r.approved_at,
 });
@@ -33,10 +37,6 @@ export function listFilled(transferId: number): Filled[] {
 export function getFilled(id: number): Filled | null {
   const r = db.prepare(`${SELECT} WHERE ff.id = ?`).get(id);
   return r ? parse(r) : null;
-}
-
-export function createFilled(transferId: number, formId: number, values: FieldValue[]) {
-  db.prepare("INSERT INTO filled_forms (transfer_id, form_id, values_json) VALUES (?, ?, ?)").run(transferId, formId, JSON.stringify(values));
 }
 
 // Editing un-approves: a person must re-check after any change.

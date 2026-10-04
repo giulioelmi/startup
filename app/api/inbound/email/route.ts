@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { audit } from "@/lib/db";
+import { processForm } from "@/lib/agent";
 import { saveForm } from "@/lib/forms";
 import { matchHospitalByEmail } from "@/lib/hospitals";
 
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
   let saved = 0;
   for (const a of mail.Attachments ?? []) {
     if (!ACCEPTED.includes(a.ContentType)) continue;
-    await saveForm({
+    const id = await saveForm({
       name: a.Name || mail.Subject || "Emailed form",
       bytes: Buffer.from(a.Content, "base64"),
       mime: a.ContentType,
@@ -30,6 +32,7 @@ export async function POST(req: Request) {
       source: "email",
       sender,
     });
+    after(() => processForm(id)); // AI reads and fills it after we reply
     saved++;
   }
   audit("inbound-email", "form.received", null, `${saved} attachment(s) from ${hospital?.id ?? "unknown sender"}`);

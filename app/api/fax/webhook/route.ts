@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { audit } from "@/lib/db";
+import { processForm } from "@/lib/agent";
 import { setFaxStatus } from "@/lib/fax";
 import { saveForm } from "@/lib/forms";
 import { matchHospitalByPhone } from "@/lib/hospitals";
@@ -16,7 +18,7 @@ export async function POST(req: Request) {
 
   if (event.event === "INCOMING_FAX" && event.file) {
     const hospital = matchHospitalByPhone(fax.from ?? "");
-    await saveForm({
+    const id = await saveForm({
       name: `Fax from ${fax.from ?? "unknown"}`,
       bytes: Buffer.from(event.file, "base64"),
       mime: "application/pdf",
@@ -24,6 +26,7 @@ export async function POST(req: Request) {
       source: "fax",
       sender: fax.from,
     });
+    after(() => processForm(id)); // AI reads and fills it after we reply
     audit("inbound-fax", "form.received", null, hospital?.id ?? "unknown sender");
   } else if (fax.id && fax.status) {
     setFaxStatus(fax.id, fax.status);

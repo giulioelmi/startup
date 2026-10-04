@@ -17,6 +17,11 @@ export async function POST(req: Request) {
   const step = url.searchParams.get("step") ?? "inbound";
   const callSid = params.CallSid;
   const xml = (body: string) => new Response(body, { headers: { "Content-Type": "text/xml" } });
+  // When we hang up, the call is over (inbound calls get no Twilio status callback unless configured).
+  const hangUp = (say: string) => {
+    db.prepare("UPDATE calls SET status = 'completed' WHERE call_sid = ?").run(callSid);
+    return xml(speakAndHangUp(say));
+  };
   const turnUrl = (transferId: number, idle = 0) => `/api/voice/twilio?step=turn&transfer=${transferId}&idle=${idle}`;
 
   const greet = (transferId: number) => {
@@ -42,12 +47,12 @@ export async function POST(req: Request) {
     const id = Number((params.Digits || params.SpeechResult || "").replace(/\D/g, ""));
     const t = id ? getTransfer(id) : null;
     if (t && t.status === "open") return greet(t.id);
-    return xml(speakAndHangUp("Sorry, I couldn't find that transfer. Please call our physician directly. Goodbye."));
+    return hangUp("Sorry, I couldn't find that transfer. Please call our physician directly. Goodbye.");
   }
 
   const transferId = Number(url.searchParams.get("transfer"));
   const t = getTransfer(transferId);
-  if (!t) return xml(speakAndHangUp("Sorry, this transfer is no longer available. Goodbye."));
+  if (!t) return hangUp("Sorry, this transfer is no longer available. Goodbye.");
 
   if (step === "start") return greet(transferId);
 
@@ -56,7 +61,7 @@ export async function POST(req: Request) {
   if (!heard) {
     // Silence or hold music: keep listening, up to ~5 minutes.
     const idle = Number(url.searchParams.get("idle") ?? 0) + 1;
-    if (idle > 30) return xml(speakAndHangUp("I'll call back later. Goodbye."));
+    if (idle > 30) return hangUp("I'll call back later. Goodbye.");
     return xml(speakAndListen(turnUrl(transferId, idle)));
   }
 
@@ -70,6 +75,6 @@ export async function POST(req: Request) {
     audit("ai-voice", `transfer.${reply.outcome}`, transferId);
   }
   if (reply.say) addLine(callSid, "ai", reply.say);
-  if (reply.endCall) return xml(speakAndHangUp(reply.say || "Thank you. Goodbye."));
+  if (reply.endCall) return hangUp(reply.say || "Thank you. Goodbye.");
   return xml(speakAndListen(turnUrl(transferId), reply.say, reply.pressDigits));
 }

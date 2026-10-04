@@ -16,6 +16,7 @@
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",
     "@ai-sdk/openai-compatible": "^3.0.62",
+    "@napi-rs/canvas": "^1.0.10",
     "ai": "^7.0.127",
     "better-sqlite3": "^13.0.3",
     "jose": "^6.2.12",
