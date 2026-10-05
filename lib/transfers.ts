@@ -1,6 +1,7 @@
 import { all, one, run } from "./db";
 import type { ClinicalSummary } from "./summary";
 import type { Ranking } from "./ranking";
+import type { WorkflowStep } from "./workflow";
 
 export type TransferDetails = {
   sendingHospital: string;
@@ -22,6 +23,8 @@ export type Transfer = {
   summary: ClinicalSummary;
   ranking: Ranking | null;
   hospitalId: string | null;
+  workflow: WorkflowStep[] | null; // the chosen facility's workflow, copied when it was chosen
+  skipped: number[]; // workflow steps staff marked as done/skipped
   status: "open" | "accepted" | "declined" | "cancelled";
   outcomeReason: string | null;
   createdAt: string;
@@ -38,6 +41,8 @@ function parse(row: any): Transfer {
     summary: JSON.parse(row.summary),
     ranking: row.ranking ? JSON.parse(row.ranking) : null,
     hospitalId: row.hospital_id,
+    workflow: row.workflow ? JSON.parse(row.workflow) : null,
+    skipped: JSON.parse(row.skipped ?? "[]"),
     status: row.status,
     outcomeReason: row.outcome_reason,
     createdAt: row.created_at,
@@ -61,9 +66,14 @@ export async function createTransfer(t: Pick<Transfer, "patientId" | "patientNam
   return id;
 }
 
-export async function updateTransfer(id: number, fields: { ranking?: Ranking; hospitalId?: string; status?: Transfer["status"]; outcomeReason?: string }) {
+export async function updateTransfer(
+  id: number,
+  fields: { ranking?: Ranking; hospitalId?: string; workflow?: WorkflowStep[]; skipped?: number[]; status?: Transfer["status"]; outcomeReason?: string },
+) {
   if (fields.ranking) await run("UPDATE transfers SET ranking = $1 WHERE id = $2", [JSON.stringify(fields.ranking), id]);
   if (fields.hospitalId) await run("UPDATE transfers SET hospital_id = $1 WHERE id = $2", [fields.hospitalId, id]);
+  if (fields.workflow) await run("UPDATE transfers SET workflow = $1, skipped = '[]' WHERE id = $2", [JSON.stringify(fields.workflow), id]);
+  if (fields.skipped) await run("UPDATE transfers SET skipped = $1 WHERE id = $2", [JSON.stringify(fields.skipped), id]);
   if (fields.status) await run("UPDATE transfers SET status = $1, outcome_reason = $2 WHERE id = $3", [fields.status, fields.outcomeReason ?? null, id]);
 }
 

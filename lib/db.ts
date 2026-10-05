@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 
 // Postgres everywhere, two backends:
@@ -20,7 +21,7 @@ const SCHEMA = [
     fields TEXT NOT NULL DEFAULT '[]',    -- JSON FormField[]
     status TEXT NOT NULL DEFAULT 'reading',  -- reading | ready | failed (AI finding the fields)
     error TEXT,
-    source TEXT NOT NULL,                 -- upload | email | fax
+    source TEXT NOT NULL,                 -- upload | email | fax | web (downloaded from the hospital site)
     sender TEXT,
     received_at TEXT NOT NULL DEFAULT ${NOW}
   )`,
@@ -68,6 +69,14 @@ const SCHEMA = [
     pdf BYTEA NOT NULL,
     created_at TEXT NOT NULL DEFAULT ${NOW}
   )`,
+  `CREATE TABLE IF NOT EXISTS facilities (
+    id TEXT PRIMARY KEY,
+    data TEXT NOT NULL                    -- JSON Hospital (contact details, services, workflow)
+  )`,
+  // The chosen facility's workflow, copied when the hospital is chosen (later edits don't change a running transfer),
+  // and the workflow steps staff marked as done or skipped.
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS workflow TEXT`,
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS skipped TEXT NOT NULL DEFAULT '[]'`,
   `CREATE TABLE IF NOT EXISTS audit (
     id SERIAL PRIMARY KEY,
     at TEXT NOT NULL DEFAULT ${NOW},
@@ -86,6 +95,7 @@ async function connect(): Promise<Query> {
   }
   const { PGlite } = await import("@electric-sql/pglite");
   const dir = process.env.DATA_DIR === "memory" ? undefined : path.join(process.env.DATA_DIR || path.join(process.cwd(), "data"), "pg");
+  if (dir) fs.mkdirSync(dir, { recursive: true });
   const pg = new PGlite(dir);
   return async (text, params) => (await pg.query<Row>(text, params)).rows;
 }

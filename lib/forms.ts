@@ -12,7 +12,7 @@ import {
 } from "pdf-lib";
 import { all, bytes, one, run } from "./db";
 import { askForObject } from "./llm";
-import { HOSPITALS, type Hospital } from "./hospitals";
+import { listHospitals, type Hospital } from "./hospitals";
 import { pageImages, pageText, type TextItem } from "./pdf-pages";
 import type { Transfer } from "./transfers";
 
@@ -130,16 +130,15 @@ function nearbyText(text: TextItem[], page: number, r: { x: number; y: number; w
   return best?.text ?? null;
 }
 
-const hospitalIds = HOSPITALS.map((h) => h.id) as [string, ...string[]];
-
 // Scanned or flat forms: a vision model looks at the pages and finds every blank.
 export async function readFormWithAI(pdf: Uint8Array) {
   const images = await pageImages(pdf);
   const sizes = (await PDFDocument.load(pdf, { ignoreEncryption: true })).getPages().map((p) => p.getSize());
+  const hospitals = await listHospitals();
   const result = await askForObject(
     z.object({
       title: z.string(),
-      hospital: z.enum([...hospitalIds, "unknown"]),
+      hospital: z.enum([...hospitals.map((h) => h.id), "unknown"]),
       fields: z.array(
         z.object({
           label: z.string(),
@@ -155,7 +154,7 @@ List EVERY blank the referring hospital must fill in: lines, boxes, checkboxes, 
 - page: 0-based page index (images are given in order).
 - box: the EMPTY area where the answer is written (not the label), as [ymin, xmin, ymax, xmax] scaled 0-1000.
 - Skip signature lines and fields for the receiving hospital's own use.
-- title: the form's title. hospital: which hospital issued it, from letterhead/logo (${HOSPITALS.map((h) => `${h.id} = ${h.name}`).join("; ")}), else "unknown".`,
+- title: the form's title. hospital: which hospital issued it, from letterhead/logo (${hospitals.map((h) => `${h.id} = ${h.name}`).join("; ")}), else "unknown".`,
     `This form has ${images.length} page(s).`,
     images,
   );

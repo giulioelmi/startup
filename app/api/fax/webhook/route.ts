@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const fax = event.fax ?? {};
 
   if (event.event === "INCOMING_FAX" && event.file) {
-    const hospital = matchHospitalByPhone(fax.from ?? "");
+    const hospital = await matchHospitalByPhone(fax.from ?? "");
     const id = await saveForm({
       name: `Fax from ${fax.from ?? "unknown"}`,
       bytes: Buffer.from(event.file, "base64"),

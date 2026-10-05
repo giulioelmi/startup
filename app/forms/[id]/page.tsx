@@ -8,7 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { all } from "@/lib/db";
 import { getForm, type FormField } from "@/lib/forms";
-import { HOSPITALS } from "@/lib/hospitals";
+import { listHospitals } from "@/lib/hospitals";
 
 // AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
 export const maxDuration = 300;
@@ -18,6 +18,7 @@ export default async function FormPage(props: PageProps<"/forms/[id]">) {
   const form = await getForm(id);
   if (!form) notFound();
   const fields = JSON.parse(form.fields) as FormField[];
+  const hospitals = await listHospitals();
   const usedIn = await all<{ id: number; transfer_id: number; status: string; patient_name: string }>(
     "SELECT ff.id, ff.transfer_id, ff.status, t.patient_name FROM filled_forms ff JOIN transfers t ON t.id = ff.transfer_id WHERE ff.form_id = $1",
     [id],
@@ -68,7 +69,7 @@ export default async function FormPage(props: PageProps<"/forms/[id]">) {
             <label className="label">Hospital</label>
             <select name="hospitalId" defaultValue={form.hospital_id ?? ""} className="input">
               <option value="">Unassigned</option>
-              {HOSPITALS.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+              {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
             </select>
           </div>
           <SubmitButton className="btn-light">Save</SubmitButton>

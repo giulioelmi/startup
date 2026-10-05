@@ -53,6 +53,8 @@ const transfer: Transfer = {
   summary: summarize(record),
   ranking: null,
   hospitalId: "keck",
+  workflow: null,
+  skipped: [],
   status: "open",
   outcomeReason: null,
   createdAt: "2026-10-04",

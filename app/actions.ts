@@ -8,10 +8,11 @@ import { getPatientRecord } from "@/lib/epic";
 import { summarize } from "@/lib/summary";
 import { createTransfer, getTransfer, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
-import { getHospital } from "@/lib/hospitals";
+import { CAPABILITIES, deleteHospital, getHospital, saveHospital, type Capability, type Hospital } from "@/lib/hospitals";
+import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
 import { saveForm, type FieldValue, type FormField } from "@/lib/forms";
 import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/filled";
-import { fillOpenTransfersFor, processForm, queueFill, queueFormsForTransfer, runFills } from "@/lib/agent";
+import { downloadForms, fillOpenTransfersFor, processForm, queueFill, queueFormsForTransfer, runFills } from "@/lib/agent";
 import { buildPacket, sendFax } from "@/lib/fax";
 import { startCall } from "@/lib/voice";
 
@@ -51,11 +52,24 @@ export async function runRanking(transferId: number) {
 }
 
 export async function chooseHospital(transferId: number, hospitalId: string) {
-  await updateTransfer(transferId, { hospitalId });
+  const hospital = (await getHospital(hospitalId))!;
+  await updateTransfer(transferId, { hospitalId, workflow: hospital.workflow }); // the transfer now follows this facility's workflow
   await audit("user", "transfer.choose", transferId, hospitalId);
   const queued = await queueFormsForTransfer(transferId); // forms agent fills everything on file for this hospital
-  after(() => runFills(queued));
-  redirect(`/transfers/${transferId}?step=forms`);
+  after(async () => {
+    await runFills(queued);
+    await Promise.all((await downloadForms(hospitalId)).map(processForm)); // its public forms not on file yet
+  });
+  redirect(`/transfers/${transferId}?step=w0`);
+}
+
+// Staff mark a workflow step as done (or not needed); clicking again un-marks it.
+export async function toggleStep(transferId: number, index: number) {
+  const t = (await getTransfer(transferId))!;
+  const skipped = t.skipped.includes(index) ? t.skipped.filter((i) => i !== index) : [...t.skipped, index];
+  await updateTransfer(transferId, { skipped });
+  if (skipped.length > t.skipped.length) await audit("user", "step.skip", transferId, `step ${index + 1}`);
+  revalidatePath(`/transfers/${transferId}`);
 }
 
 export async function setOutcome(transferId: number, f: FormData) {
@@ -89,14 +103,14 @@ export async function saveFilled(filledId: number, f: FormData) {
 
 export async function faxPacket(transferId: number, f: FormData) {
   const t = (await getTransfer(transferId))!;
-  const hospital = getHospital(t.hospitalId)!;
+  const hospital = (await getHospital(t.hospitalId))!;
   const filled = (await listFilled(transferId)).filter((x) => x.status === "ready");
-  if (!filled.length || filled.some((x) => !x.approvedAt)) throw new Error("Every filled form must be approved before faxing.");
+  if (filled.some((x) => !x.approvedAt)) throw new Error("Every filled form must be approved before faxing.");
   const pdfs = await Promise.all(filled.map(async (x) => (await getFilledPdf(x.id))!.pdf));
   const packet = await buildPacket(t, hospital, pdfs);
   await sendFax(transferId, str(f, "to"), packet);
   await audit("user", "fax.send", transferId, `${filled.length} form(s) to ${hospital.id}`);
-  redirect(`/transfers/${transferId}?step=fax`);
+  redirect(`/transfers/${transferId}?step=${str(f, "step")}`);
 }
 
 // ---------- Calls ----------
@@ -104,7 +118,7 @@ export async function faxPacket(transferId: number, f: FormData) {
 export async function callTransferCenter(transferId: number, f: FormData) {
   await startCall(transferId, str(f, "to"));
   await audit("user", "call.start", transferId);
-  redirect(`/transfers/${transferId}?step=call`);
+  redirect(`/transfers/${transferId}?step=${str(f, "step")}`);
 }
 
 // ---------- Form library ----------
@@ -145,4 +159,48 @@ export async function deleteForm(formId: number) {
   if (await one("SELECT 1 FROM filled_forms WHERE form_id = $1", [formId])) throw new Error("This form was used in a transfer; it can't be deleted.");
   await run("DELETE FROM forms WHERE id = $1", [formId]);
   redirect("/forms");
+}
+
+// ---------- Facilities ----------
+
+const lines = (s: string) => s.split("\n").map((l) => l.trim()).filter(Boolean);
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+// `id` is null for a new facility.
+export async function saveFacility(id: string | null, f: FormData) {
+  const workflow = (JSON.parse(str(f, "workflow") || "[]") as WorkflowStep[]).filter((s) => s.type in STEP_TYPES);
+  const h: Hospital = {
+    id: id ?? (slug(str(f, "name")) || `facility-${Date.now()}`),
+    name: str(f, "name"),
+    address: str(f, "address"),
+    lat: Number(str(f, "lat")) || 0,
+    lng: Number(str(f, "lng")) || 0,
+    transferPhone: str(f, "transferPhone"),
+    transferFax: str(f, "transferFax") || null,
+    transferEmail: str(f, "transferEmail") || null,
+    emailDomains: lines(str(f, "emailDomains").replace(/,/g, "\n")),
+    verified: f.get("verified") === "on",
+    requiredInfo: lines(str(f, "requiredInfo")),
+    intakeNotes: str(f, "intakeNotes"),
+    capabilities: f.getAll("capabilities").map(String).filter((c): c is Capability => c in CAPABILITIES),
+    workflow,
+    formUrls: lines(str(f, "formUrls")),
+  };
+  if (!id && (await getHospital(h.id))) throw new Error(`A facility called "${h.name}" already exists.`);
+  await saveHospital(h);
+  await audit("user", id ? "facility.edit" : "facility.create", null, h.id);
+  redirect(`/facilities/${h.id}`);
+}
+
+export async function removeFacility(id: string) {
+  if (await one("SELECT 1 FROM transfers WHERE hospital_id = $1", [id])) throw new Error("This facility has transfers; it can't be deleted.");
+  await deleteHospital(id);
+  await audit("user", "facility.delete", null, id);
+  redirect("/facilities");
+}
+
+export async function downloadFacilityForms(id: string) {
+  const ids = await downloadForms(id);
+  after(() => Promise.all(ids.map(processForm)));
+  revalidatePath(`/facilities/${id}`);
 }

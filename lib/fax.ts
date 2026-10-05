@@ -24,6 +24,7 @@ export async function buildPacket(transfer: Transfer, hospital: Hospital, filled
     `From: ${d.sendingHospital}`,
     `Referring physician: ${d.referringPhysician}   Callback: ${d.callbackPhone}`,
     `Return fax: ${d.sendingFax}`,
+    ...(d.caseManager ? [`Case manager: ${d.caseManager}`] : []),
     `Date: ${new Date().toLocaleString("en-US")}`,
     `Pages (including cover): ${1 + formPages + recordPages}`,
     `Transfer reference #: ${transfer.id}  (say or key this number when calling us back)`,

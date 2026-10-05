@@ -63,7 +63,7 @@ export type Reply = {
 };
 
 export async function answer(t: Transfer, history: Line[], heard: string): Promise<Reply> {
-  const hospital = getHospital(t.hospitalId);
+  const hospital = await getHospital(t.hospitalId);
   return askForObject(
     z.object({
       say: z.string(),
@@ -83,6 +83,7 @@ Rules:
 - Set endCall true only after the conversation is clearly over and you've said goodbye.`,
     JSON.stringify({
       receivingHospital: hospital?.name,
+      howTheyTakeTransfers: hospital?.intakeNotes,
       reasonForTransfer: t.reason,
       transfer: t.details,
       chart: t.summary,

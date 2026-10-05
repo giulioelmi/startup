@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { callTransferCenter, chooseHospital, faxPacket, refillForm, runRanking, saveFilled, setOutcome } from "@/app/actions";
+import { callTransferCenter, chooseHospital, faxPacket, refillForm, runRanking, saveFilled, setOutcome, toggleStep } from "@/app/actions";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { PdfViewer } from "@/components/PdfViewer";
@@ -10,8 +10,9 @@ import { Pill, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
-import { CAPABILITIES, getHospital, type Hospital } from "@/lib/hospitals";
-import { activity, progress, STEP_IDS, type Activity, type StepId } from "@/lib/progress";
+import { CAPABILITIES, listHospitals, type Hospital } from "@/lib/hospitals";
+import { STEP_ICONS, STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
+import { activity, progress, type Activity } from "@/lib/progress";
 import { getTransfer, type Transfer } from "@/lib/transfers";
 import type { Line } from "@/lib/voice";
 
@@ -29,10 +30,15 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const t = await getTransfer(id);
   if (!t) notFound();
   const q = (await props.searchParams) as { step?: string; doc?: string };
-  const { steps, next } = await progress(t);
-  const step: StepId = STEP_IDS.includes(q.step as StepId) ? (q.step as StepId) : next;
+  const { steps, workflow, next } = await progress(t);
+  const step = steps.some((s) => s.id === q.step) ? q.step! : next;
+  const n = steps.findIndex((s) => s.id === step) + 1; // step number shown in the panel
+  const index = steps.find((s) => s.id === step)?.index; // set for the facility's workflow steps
+  const ws = index != null ? workflow[index] : undefined;
+  const view = ws ? VIEW[ws.type] : (step as View); // which document shows on the right
 
-  const hospital = getHospital(t.hospitalId);
+  const hospitals = await listHospitals();
+  const hospital = hospitals.find((h) => h.id === t.hospitalId);
   const filled = await listFilled(id);
   const reading = hospital ? (await listForms(hospital.id)).filter((f) => f.status === "reading") : [];
   const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 ORDER BY id DESC", [id]);
@@ -78,11 +84,25 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
         <div className="space-y-6 lg:col-span-5">
           <section className="card space-y-4">
             {step === "chart" && <ChartStep t={t} />}
-            {step === "hospital" && <HospitalStep t={t} href={href} />}
-            {step === "forms" && <FormsStep t={t} hospital={hospital} filled={filled} reading={reading.length} selected={selectedFilled(filled, q.doc)} href={href} />}
-            {step === "call" && <CallStep t={t} hospital={hospital} calls={calls} selected={Number(q.doc) || calls[0]?.id} href={href} />}
-            {step === "fax" && <FaxStep t={t} hospital={hospital} filled={filled} faxes={faxes} href={href} />}
-            {step === "outcome" && <OutcomeStep t={t} />}
+            {step === "hospital" && <HospitalStep t={t} hospitals={hospitals} href={href} />}
+            {ws && hospital && (
+              <>
+                <StepTitle n={n} title={`${STEP_ICONS[ws.type]} ${STEP_TYPES[ws.type]}`}>{ws.note}</StepTitle>
+                {(ws.type === "fill_forms" || ws.type === "receive_forms") && (
+                  <FormsStep t={t} ws={ws} here={step} hospital={hospital} filled={filled} reading={reading.length} selected={selectedFilled(filled, q.doc)} href={href} />
+                )}
+                {(ws.type === "call" || ws.type === "wait_for_call") && (
+                  <CallStep t={t} ws={ws} here={step} hospital={hospital} calls={calls} selected={Number(q.doc) || calls[0]?.id} href={href} />
+                )}
+                {ws.type === "send_fax" && <FaxStep t={t} ws={ws} here={step} workflow={workflow} hospital={hospital} filled={filled} faxes={faxes} href={href} />}
+                <form action={toggleStep.bind(null, t.id, index!)} className="border-t pt-3">
+                  <SubmitButton className="text-xs font-medium text-slate-500 hover:text-teal-700">
+                    {t.skipped.includes(index!) ? "↺ Undo “done”" : "Mark this step done / not needed"}
+                  </SubmitButton>
+                </form>
+              </>
+            )}
+            {step === "outcome" && <OutcomeStep t={t} n={n} />}
           </section>
           <section className="card">
             <h2 className="mb-4">Activity</h2>
@@ -91,16 +111,22 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
         </div>
 
         <div className="lg:col-span-7">
-          <Document t={t} step={step} hospital={hospital} filled={filled} calls={calls} faxes={faxes} events={events} doc={q.doc} />
+          <Document t={t} view={view} ws={ws} hospital={hospital} hospitals={hospitals} filled={filled} calls={calls} faxes={faxes} events={events} doc={q.doc} />
         </div>
       </div>
     </div>
   );
 }
 
+const short = (h: Hospital) => h.name.split(" (")[0];
+
 const selectedFilled = (filled: Filled[], doc?: string) => filled.find((f) => f.id === Number(doc)) ?? filled.find((f) => !f.approvedAt) ?? filled[0];
 
 type Href = (step: string, doc?: string | number) => string;
+
+// Which document each kind of workflow step shows on the right.
+type View = "chart" | "hospital" | "forms" | "call" | "fax" | "outcome";
+const VIEW: Record<WorkflowStep["type"], View> = { call: "call", wait_for_call: "call", receive_forms: "forms", fill_forms: "forms", send_fax: "fax" };
 
 // ---------------- Left: one panel per step ----------------
 
@@ -141,7 +167,7 @@ function ChartStep({ t }: { t: Transfer }) {
   );
 }
 
-function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
+function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital[]; href: Href }) {
   if (!t.ranking)
     return (
       <>
@@ -173,7 +199,8 @@ function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
       )}
       <div className="space-y-3">
         {t.ranking.hospitals.map((r, i) => {
-          const h = getHospital(r.hospitalId)!;
+          const h = hospitals.find((x) => x.id === r.hospitalId);
+          if (!h) return null; // facility deleted since the ranking
           const chosen = t.hospitalId === h.id;
           return (
             <div key={h.id} className={`rounded-lg border p-3 ${chosen ? "border-teal-600 bg-teal-50/50 ring-1 ring-teal-600" : "border-slate-200"}`}>
@@ -214,13 +241,14 @@ const FILL_STATUS = {
 };
 const fillStatus = (f: Filled) => (f.status === "ready" ? FILL_STATUS[f.approvedAt ? "approved" : "review"] : FILL_STATUS[f.status]);
 
-function FormsStep({ t, hospital, filled, reading, selected, href }: { t: Transfer; hospital?: Hospital; filled: Filled[]; reading: number; selected?: Filled; href: Href }) {
-  if (!hospital) return <StepTitle n={3} title="Transfer forms">Choose a receiving hospital first.</StepTitle>;
+function FormsStep({ t, ws, here, hospital, filled, reading, selected, href }: { t: Transfer; ws: WorkflowStep; here: string; hospital: Hospital; filled: Filled[]; reading: number; selected?: Filled; href: Href }) {
   return (
     <>
-      <StepTitle n={3} title="Transfer forms">
-        The AI fills every {hospital.name.split(" (")[0]} form automatically, including new ones that arrive by email or fax. Review and approve.
-      </StepTitle>
+      <p className="text-sm text-slate-600">
+        {ws.type === "receive_forms"
+          ? `Waiting for ${short(hospital)}'s forms. They arrive by fax${process.env.SENDING_HOSPITAL_FAX ? ` (${process.env.SENDING_HOSPITAL_FAX})` : ""} or email, or upload them in the Forms inbox; the AI fills them the moment they arrive.`
+          : `The AI fills every ${short(hospital)} form automatically, including new ones that arrive by email or fax. Review and approve.`}
+      </p>
 
       <ul className="divide-y rounded-lg border">
         {reading > 0 && (
@@ -231,7 +259,7 @@ function FormsStep({ t, hospital, filled, reading, selected, href }: { t: Transf
         )}
         {filled.map((f) => (
           <li key={f.id}>
-            <Link href={href("forms", f.id)} className={`flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50 ${selected?.id === f.id ? "bg-teal-50/60" : ""}`}>
+            <Link href={href(here, f.id)} className={`flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50 ${selected?.id === f.id ? "bg-teal-50/60" : ""}`}>
               <span className="font-medium">{f.formName}</span>
               {fillStatus(f)}
             </Link>
@@ -239,7 +267,7 @@ function FormsStep({ t, hospital, filled, reading, selected, href }: { t: Transf
         ))}
         {filled.length === 0 && reading === 0 && (
           <li className="px-3 py-4 text-sm text-slate-600">
-            No {hospital.name.split(" (")[0]} forms on file yet. <Link href="/forms" className="font-medium text-teal-700">Upload one</Link>, or ask the transfer
+            No {short(hospital)} forms on file yet. <Link href="/forms" className="font-medium text-teal-700">Upload one</Link>, or ask the transfer
             center to fax/email it — the AI fills it the moment it arrives.
           </li>
         )}
@@ -304,25 +332,30 @@ function Review({ f, t }: { f: Filled; t: Transfer }) {
   );
 }
 
-function CallStep({ t, hospital, calls, selected, href }: { t: Transfer; hospital?: Hospital; calls: CallRow[]; selected?: number; href: Href }) {
-  if (!hospital) return <StepTitle n={4} title="Call the transfer center">Choose a receiving hospital first.</StepTitle>;
+function CallStep({ t, ws, here, hospital, calls, selected, href }: { t: Transfer; ws: WorkflowStep; here: string; hospital: Hospital; calls: CallRow[]; selected?: number; href: Href }) {
+  const outbound = ws.type === "call";
+  const shown = calls.filter((c) => (c.direction === "outbound") === outbound);
   return (
     <>
-      <StepTitle n={4} title="Call the transfer center">
-        The AI calls, presents the request, answers the nurse&apos;s questions from the chart and records the decision. The hospital can call back
-        {process.env.TWILIO_PHONE_NUMBER ? ` ${process.env.TWILIO_PHONE_NUMBER}` : ""} with reference #{t.id}.
-      </StepTitle>
-      <form action={callTransferCenter.bind(null, t.id)} className="flex items-end gap-2">
-        <div className="flex-1">
-          <label className="label">Number to call</label>
-          <input name="to" defaultValue={process.env.CALL_TEST_NUMBER || hospital.transferPhone} className="input" />
-        </div>
-        <SubmitButton busy="Dialing…">📞 Call now</SubmitButton>
-      </form>
+      <p className="text-sm text-slate-600">
+        {outbound
+          ? "The AI calls, presents the request, answers the nurse's questions from the chart and records the decision."
+          : `${short(hospital)} calls back${process.env.TWILIO_PHONE_NUMBER ? ` ${process.env.TWILIO_PHONE_NUMBER}` : " our number"} with reference #${t.id}; the AI answers from the chart and records the decision.`}
+      </p>
+      {outbound && (
+        <form action={callTransferCenter.bind(null, t.id)} className="flex items-end gap-2">
+          <input type="hidden" name="step" value={here} />
+          <div className="flex-1">
+            <label className="label">Number to call</label>
+            <input name="to" defaultValue={process.env.CALL_TEST_NUMBER || ws.number || hospital.transferPhone} className="input" />
+          </div>
+          <SubmitButton busy="Dialing…">📞 Call now</SubmitButton>
+        </form>
+      )}
       <ul className="divide-y rounded-lg border">
-        {calls.map((c) => (
+        {shown.map((c) => (
           <li key={c.id}>
-            <Link href={href("call", c.id)} className={`flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50 ${selected === c.id ? "bg-teal-50/60" : ""}`}>
+            <Link href={href(here, c.id)} className={`flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50 ${selected === c.id ? "bg-teal-50/60" : ""}`}>
               <span>
                 {c.direction === "outbound" ? "Outgoing" : "Incoming"} · {c.number}
                 <span className="block text-xs text-slate-500">{c.created_at} UTC</span>
@@ -333,38 +366,38 @@ function CallStep({ t, hospital, calls, selected, href }: { t: Transfer; hospita
             </Link>
           </li>
         ))}
-        {calls.length === 0 && <li className="px-3 py-4 text-sm text-slate-500">No calls yet.</li>}
+        {shown.length === 0 && <li className="px-3 py-4 text-sm text-slate-500">No {outbound ? "calls" : "calls from them"} yet.</li>}
       </ul>
     </>
   );
 }
 
-function FaxStep({ t, hospital, filled, faxes, href }: { t: Transfer; hospital?: Hospital; filled: Filled[]; faxes: FaxRow[]; href: Href }) {
-  if (!hospital) return <StepTitle n={5} title="Fax the packet">Choose a receiving hospital first.</StepTitle>;
-  const ready = filled.filter((f) => f.status === "ready");
-  const approved = ready.length > 0 && ready.every((f) => f.approvedAt);
+function FaxStep({ t, ws, here, workflow, hospital, filled, faxes, href }: { t: Transfer; ws: WorkflowStep; here: string; workflow: WorkflowStep[]; hospital: Hospital; filled: Filled[]; faxes: FaxRow[]; href: Href }) {
+  const approved = filled.every((f) => f.status === "ready" && f.approvedAt);
+  const formsStep = workflow.findIndex((s) => s.type === "fill_forms");
   return (
     <>
-      <StepTitle n={5} title="Fax the packet">
-        Cover sheet, approved forms and the medical record summary in one fax.
+      <p className="text-sm text-slate-600">
+        Cover sheet, {filled.length ? "approved forms " : ""}and the medical record summary in one fax.
         {(process.env.FAX_PROVIDER || "mock") === "mock" && " Fax is in mock mode: the packet is built but not transmitted."}
-      </StepTitle>
+      </p>
       <form action={faxPacket.bind(null, t.id)} className="flex items-end gap-2">
+        <input type="hidden" name="step" value={here} />
         <div className="flex-1">
           <label className="label">Fax to</label>
-          <input name="to" defaultValue={process.env.FAX_TEST_NUMBER || hospital.transferFax || ""} required className="input" />
+          <input name="to" defaultValue={process.env.FAX_TEST_NUMBER || ws.number || hospital.transferFax || ""} required className="input" />
         </div>
         <SubmitButton disabled={!approved} busy="Sending…">Send fax</SubmitButton>
       </form>
       {!approved && (
         <p className="text-sm text-amber-700">
-          Approve the forms first. <Link className="font-medium underline" href={href("forms")}>Go to forms</Link>
+          Approve the forms first.{formsStep >= 0 && <> <Link className="font-medium underline" href={href(`w${formsStep}`)}>Go to forms</Link></>}
         </p>
       )}
       {faxes.length > 0 && <ul className="divide-y rounded-lg border">
         {faxes.map((f) => (
           <li key={f.id}>
-            <Link href={href("fax", f.id)} className="flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50">
+            <Link href={href(here, f.id)} className="flex items-center justify-between px-3 py-2.5 text-sm hover:bg-slate-50">
               <span>
                 To {f.to_number}
                 <span className="block text-xs text-slate-500">{f.created_at} UTC · {f.provider}</span>
@@ -378,10 +411,10 @@ function FaxStep({ t, hospital, filled, faxes, href }: { t: Transfer; hospital?:
   );
 }
 
-function OutcomeStep({ t }: { t: Transfer }) {
+function OutcomeStep({ t, n }: { t: Transfer; n: number }) {
   return (
     <>
-      <StepTitle n={6} title="Outcome">Set automatically when the transfer center accepts or declines on the call; you can also record it here.</StepTitle>
+      <StepTitle n={n} title="Outcome">Set automatically when the transfer center accepts or declines on the call; you can also record it here.</StepTitle>
       <form action={setOutcome.bind(null, t.id)} className="space-y-3">
         <select name="status" defaultValue={t.status} className="input">
           <option value="open">Open</option>
@@ -398,7 +431,7 @@ function OutcomeStep({ t }: { t: Transfer }) {
 
 // ---------------- Right: the document for the current step ----------------
 
-function Document({ t, step, hospital, filled, calls, faxes, events, doc }: { t: Transfer; step: StepId; hospital?: Hospital; filled: Filled[]; calls: CallRow[]; faxes: FaxRow[]; events: Activity[]; doc?: string }) {
+function Document({ t, view, ws, hospital, hospitals, filled, calls, faxes, events, doc }: { t: Transfer; view: View; ws?: WorkflowStep; hospital?: Hospital; hospitals: Hospital[]; filled: Filled[]; calls: CallRow[]; faxes: FaxRow[]; events: Activity[]; doc?: string }) {
   const frame = (title: string, sub: string, body: React.ReactNode, link?: string) => (
     <section className="card sticky top-20 space-y-4 bg-slate-100/60">
       <div className="flex items-center justify-between">
@@ -413,14 +446,14 @@ function Document({ t, step, hospital, filled, calls, faxes, events, doc }: { t:
     </section>
   );
 
-  if (step === "chart") return frame("Epic chart summary", `Snapshot ${t.createdAt} UTC`, <Summary s={t.summary} />);
+  if (view === "chart") return frame("Epic chart summary", `Snapshot ${t.createdAt} UTC`, <Summary s={t.summary} />);
 
-  if (step === "hospital") {
-    const h = getHospital(doc) ?? hospital ?? getHospital(t.ranking?.hospitals[0]?.hospitalId);
+  if (view === "hospital") {
+    const h = hospitals.find((x) => x.id === (doc ?? t.hospitalId ?? t.ranking?.hospitals[0]?.hospitalId));
     return h ? frame(h.name, "Transfer center profile", <HospitalProfile h={h} />) : frame("Hospital", "", <p className="text-sm text-slate-500">No ranking yet.</p>);
   }
 
-  if (step === "forms") {
+  if (view === "forms") {
     const f = selectedFilled(filled, doc);
     if (!f) return frame("Filled form", "", <p className="text-sm text-slate-500">The filled form appears here.</p>);
     if (f.status !== "ready") return frame(f.formName, "Original form — AI is filling it", <PdfViewer url={`/api/forms/${f.formId}/pdf`} />);
@@ -428,13 +461,13 @@ function Document({ t, step, hospital, filled, calls, faxes, events, doc }: { t:
     return frame(f.formName, f.approvedAt ? "Filled and approved" : "Filled by AI — awaiting review", <PdfViewer key={url} url={url} />, url);
   }
 
-  if (step === "call") {
-    const c = calls.find((x) => x.id === Number(doc)) ?? calls[0];
+  if (view === "call") {
+    const c = calls.find((x) => x.id === Number(doc)) ?? calls.find((x) => (x.direction === "outbound") === (ws?.type === "call"));
     if (!c) return frame("Call transcript", "", <p className="text-sm text-slate-500">The live transcript appears here during the call.</p>);
     return frame("Call transcript", `${c.direction} · ${c.number} · ${c.status}`, <Transcript lines={JSON.parse(c.transcript)} live={LIVE_CALL.includes(c.status)} />);
   }
 
-  if (step === "fax") {
+  if (view === "fax") {
     const sent = faxes.find((x) => x.id === Number(doc));
     if (!hospital) return frame("Fax packet", "", <p className="text-sm text-slate-500">Choose a hospital first.</p>);
     const url = sent ? `/api/faxes/${sent.id}/pdf` : `/api/transfers/${t.id}/packet?v=${filled.map((f) => f.approvedAt ?? f.status).join()}`;

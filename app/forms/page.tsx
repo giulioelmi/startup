@@ -4,15 +4,16 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { listForms, type FormField } from "@/lib/forms";
-import { HOSPITALS, getHospital } from "@/lib/hospitals";
+import { listHospitals } from "@/lib/hospitals";
 
 // AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
 export const maxDuration = 300;
 
-const SOURCE = { upload: "⬆ Upload", email: "✉ Email", fax: "📠 Fax" } as Record<string, string>;
+const SOURCE = { upload: "⬆ Upload", email: "✉ Email", fax: "📠 Fax", web: "🌐 Hospital website" } as Record<string, string>;
 
 export default async function FormsPage() {
   const forms = await listForms();
+  const hospitals = await listHospitals();
   return (
     <div className="space-y-6">
       {forms.some((f) => f.status === "reading") && <AutoRefresh seconds={2} />}
@@ -34,7 +35,7 @@ export default async function FormsPage() {
           <label className="label">Hospital</label>
           <select name="hospitalId" className="input">
             <option value="">Let the AI work it out</option>
-            {HOSPITALS.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+            {hospitals.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
           </select>
         </div>
         <SubmitButton busy="Uploading…">Upload form</SubmitButton>
@@ -53,7 +54,7 @@ export default async function FormsPage() {
                 return (
                   <tr key={f.id} className="hover:bg-slate-50">
                     <td className="px-5 py-3"><Link className="font-semibold text-slate-900 hover:text-teal-700" href={`/forms/${f.id}`}>{f.name}</Link></td>
-                    <td>{getHospital(f.hospital_id)?.name.split(" (")[0] ?? <span className="text-amber-700">Unassigned</span>}</td>
+                    <td>{hospitals.find((h) => h.id === f.hospital_id)?.name.split(" (")[0] ?? <span className="text-amber-700">Unassigned</span>}</td>
                     <td>{SOURCE[f.source] ?? f.source}{f.sender && <span className="block text-xs text-slate-500">{f.sender}</span>}</td>
                     <td>
                       {f.status === "reading" && <Pill tone="blue" pulse>Reading…</Pill>}

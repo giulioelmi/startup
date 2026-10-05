@@ -1,5 +1,5 @@
 import { audit, run } from "@/lib/db";
-import { getHospital } from "@/lib/hospitals";
+import { matchHospitalByPhone } from "@/lib/hospitals";
 import { getTransfer, listTransfers, updateTransfer } from "@/lib/transfers";
 import { addLine, answer, getTranscript, isFromTwilio, openingLine, speakAndHangUp, speakAndListen } from "@/lib/voice";
 
@@ -39,9 +39,8 @@ export async function POST(req: Request) {
   if (step === "inbound") {
     await run("INSERT INTO calls (call_sid, direction, number, status) VALUES ($1, 'inbound', $2, 'in-progress') ON CONFLICT (call_sid) DO NOTHING", [callSid, params.From]);
     // A hospital calling back about its only open transfer: no reference number needed.
-    const fromHospital = (await listTransfers()).filter(
-      (t) => t.status === "open" && getHospital(t.hospitalId)?.transferPhone.slice(-10) === params.From?.slice(-10),
-    );
+    const hospital = await matchHospitalByPhone(params.From ?? "");
+    const fromHospital = (await listTransfers()).filter((t) => t.status === "open" && hospital && t.hospitalId === hospital.id);
     if (fromHospital.length === 1) return greet(fromHospital[0].id);
     return xml(speakAndListen("/api/voice/twilio?step=ref", "Hello. Please say or enter the transfer reference number from our fax cover sheet."));
   }

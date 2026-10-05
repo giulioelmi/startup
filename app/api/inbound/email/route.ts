@@ -22,7 +22,7 @@ export async function POST(req: Request) {
 
   const mail = (await req.json()) as PostmarkInbound;
   const sender = mail.From.match(/<(.+)>/)?.[1] ?? mail.From;
-  const hospital = matchHospitalByEmail(sender);
+  const hospital = await matchHospitalByEmail(sender);
 
   let saved = 0;
   for (const a of mail.Attachments ?? []) {

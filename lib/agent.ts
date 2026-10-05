@@ -1,5 +1,5 @@
 import { all, audit, one, run } from "./db";
-import { fillValues, getForm, readForm, type FormField } from "./forms";
+import { fillValues, getForm, readForm, saveForm, type FormField } from "./forms";
 import { getHospital } from "./hospitals";
 import { getTransfer, listTransfers } from "./transfers";
 
@@ -70,7 +70,7 @@ async function runFill(id: number) {
   try {
     const t = (await getTransfer(transferId))!;
     const fields = JSON.parse((await getForm(formId))!.fields) as FormField[];
-    const values = await fillValues(fields, t, getHospital(t.hospitalId));
+    const values = await fillValues(fields, t, await getHospital(t.hospitalId));
     await run("UPDATE filled_forms SET values_json = $1, status = 'ready' WHERE id = $2", [JSON.stringify(values), id]);
     const missing = values.filter((v) => v.source === "not in record").length;
     await audit("ai", "form.fill", transferId, `form ${formId}: ${values.length - missing} of ${values.length} fields filled`);
@@ -78,4 +78,25 @@ async function runFill(id: number) {
     await run("UPDATE filled_forms SET status = 'failed', error = $1 WHERE id = $2", [(e as Error).message, id]);
     await audit("ai", "form.fill.failed", transferId, `form ${formId}`);
   }
+}
+
+// Download a facility's public forms (its `formUrls`) into the forms inbox, once each.
+// Returns the new form ids; pass them to processForm to read and fill them.
+export async function downloadForms(hospitalId: string): Promise<number[]> {
+  const h = await getHospital(hospitalId);
+  const ids: number[] = [];
+  for (const url of h?.formUrls ?? []) {
+    if (await one("SELECT 1 FROM forms WHERE sender = $1", [url])) continue;
+    try {
+      const res = await fetch(url);
+      const mime = res.headers.get("content-type")?.split(";")[0] ?? "";
+      if (!res.ok || !["application/pdf", "image/png", "image/jpeg"].includes(mime)) throw new Error(`${res.status} ${mime}`);
+      const name = decodeURIComponent(url.split("/").pop()!.replace(/\.[a-z]+$/i, "")).replace(/[-_]+/g, " ");
+      ids.push(await saveForm({ name, bytes: new Uint8Array(await res.arrayBuffer()), mime, hospitalId, source: "web", sender: url }));
+      await audit("ai", "form.download", null, `form ${ids.at(-1)} for ${hospitalId}`);
+    } catch (e) {
+      console.error(`Could not download form ${url}: ${(e as Error).message}`);
+    }
+  }
+  return ids;
 }

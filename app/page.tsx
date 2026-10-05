@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { MiniProgress, Pill, STATUS_TONE } from "@/components/ui";
 import { one } from "@/lib/db";
-import { getHospital } from "@/lib/hospitals";
+import { listHospitals } from "@/lib/hospitals";
 import { progress } from "@/lib/progress";
 import { listTransfers } from "@/lib/transfers";
 
 export default async function Dashboard() {
   const transfers = await listTransfers();
+  const hospitals = await listHospitals();
   const progresses = new Map(await Promise.all(transfers.map(async (t) => [t.id, (await progress(t)).steps] as const)));
   const count = (s: string) => transfers.filter((t) => t.status === s).length;
   const forms = (await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM forms"))!.n;
@@ -62,7 +63,7 @@ export default async function Dashboard() {
                     <p className="text-xs text-slate-500">#{t.id} · {t.createdAt.slice(0, 16)}</p>
                   </td>
                   <td className="max-w-xs truncate pr-4">{t.reason}</td>
-                  <td>{getHospital(t.hospitalId)?.name.split(" (")[0] ?? <span className="text-slate-400">Not chosen</span>}</td>
+                  <td>{hospitals.find((h) => h.id === t.hospitalId)?.name.split(" (")[0] ?? <span className="text-slate-400">Not chosen</span>}</td>
                   <td><MiniProgress steps={progresses.get(t.id)!} /></td>
                   <td><Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill></td>
                 </tr>

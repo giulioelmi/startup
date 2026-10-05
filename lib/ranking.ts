@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { askForObject } from "./llm";
-import { CAPABILITIES, HOSPITALS, type Capability, type Hospital } from "./hospitals";
+import { CAPABILITIES, listHospitals, type Capability, type Hospital } from "./hospitals";
 import type { ClinicalSummary } from "./summary";
 
 export type RankedHospital = {
@@ -45,18 +45,19 @@ const capabilityIds = Object.keys(CAPABILITIES) as [Capability, ...Capability[]]
 
 // Always returns a ranking: if the AI is down, hospitals are ordered by distance and the page offers a re-run.
 export async function rankHospitals(summary: ClinicalSummary, reason: string): Promise<Ranking> {
+  const hospitals = await listHospitals();
   try {
-    return { ai: true, ...(await rankWithAI(summary, reason)) };
+    return { ai: true, ...(await rankWithAI(summary, reason, hospitals)) };
   } catch (e) {
     console.error("AI ranking failed:", (e as Error).message);
-    const hospitals = rank([], HOSPITALS, sendingLocation()).map((r) => ({ ...r, rationale: "" }));
-    return { ai: false, needs: [], needsExplanation: "The AI is unavailable right now, so hospitals are ordered by distance only. Check the services the patient needs, or re-run the AI.", hospitals };
+    const ranked = rank([], hospitals, sendingLocation()).map((r) => ({ ...r, rationale: "" }));
+    return { ai: false, needs: [], needsExplanation: "The AI is unavailable right now, so hospitals are ordered by distance only. Check the services the patient needs, or re-run the AI.", hospitals: ranked };
   }
 }
 
 // AI part: decide which capabilities the patient needs, and explain each option.
 // It only sees the chart summary and our hospital profiles; it is told not to use outside facts.
-async function rankWithAI(summary: ClinicalSummary, reason: string): Promise<Ranking> {
+async function rankWithAI(summary: ClinicalSummary, reason: string, hospitals: Hospital[]): Promise<Ranking> {
   const { needs, needsExplanation } = await askForObject(
     z.object({
       needs: z.array(z.enum(capabilityIds)),
@@ -66,13 +67,13 @@ async function rankWithAI(summary: ClinicalSummary, reason: string): Promise<Ran
     `Capabilities:\n${JSON.stringify(CAPABILITIES, null, 1)}\n\nReason for transfer: ${reason}\n\nChart summary:\n${JSON.stringify(summary)}`,
   );
 
-  const ranked = rank(needs, HOSPITALS, sendingLocation());
+  const ranked = rank(needs, hospitals, sendingLocation());
 
   const { rationales } = await askForObject(
     z.object({ rationales: z.array(z.object({ hospitalId: z.string(), rationale: z.string() })) }),
     "Explain each hospital option to a referring physician in 1-2 sentences. Use ONLY the facts given (capabilities, missing capabilities, distance, intake notes). Never claim bed availability or anything not given.",
     `Patient needs: ${needs.join(", ") || "none specific"} (${needsExplanation})\n\nOptions in ranked order:\n${JSON.stringify(
-      ranked.map((r) => ({ ...r, ...pick(HOSPITALS.find((h) => h.id === r.hospitalId)!) })),
+      ranked.map((r) => ({ ...r, ...pick(hospitals.find((h) => h.id === r.hospitalId)!) })),
     )}`,
   );
 

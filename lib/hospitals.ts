@@ -1,7 +1,10 @@
-// What we know about each receiving hospital. Contact details come from each
-// hospital's public transfer-center pages; anything marked `verified: false`
-// must be confirmed by phone before a pilot.
-// Forms are NOT here: they live in the database (uploaded, emailed or faxed in).
+import { all, run } from "./db";
+import type { WorkflowStep } from "./workflow";
+
+// Receiving hospitals ("facilities"). They live in the database so staff can add and edit them;
+// the ones below are built in and added on first use. Contact details come from each hospital's
+// public transfer-center pages; anything marked `verified: false` must be confirmed by phone.
+// Forms live in the forms table (uploaded, emailed, faxed in, or downloaded from `formUrls`).
 
 export const CAPABILITIES = {
   comprehensive_stroke: "Comprehensive stroke center (thrombectomy)",
@@ -40,6 +43,8 @@ export type Hospital = {
   requiredInfo: string[];
   intakeNotes: string;
   capabilities: Capability[];
+  workflow: WorkflowStep[];
+  formUrls: string[]; // the hospital's public forms; downloaded into the forms inbox
 };
 
 const ALL_ADULT: Capability[] = [
@@ -76,8 +81,17 @@ export const HOSPITALS: Hospital[] = [
       "Referring physician name and callback number",
       "Insurance",
     ],
-    intakeNotes: "Call the UCLA Transfer Center; a physician-to-physician conversation is arranged. Fax number to be confirmed.",
+    intakeNotes:
+      "Call the UCLA Patient Transfer Center first; they arrange a physician-to-physician conversation. Have the information from UCLA's transfer packet ready and fax it when asked.",
     capabilities: [...ALL_ADULT, "trauma_adult", "trauma_peds", "picu", "nicu", "high_risk_ob"],
+    workflow: [
+      { type: "call", note: "Request the transfer. They arrange a physician-to-physician call and say where to fax records." },
+      { type: "receive_forms", note: "UCLA's transfer packet: upload it to the Forms inbox, or ask them to fax/email it." },
+      { type: "fill_forms", note: "" },
+      { type: "send_fax", note: "Use the fax number they gave on the call." },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: [],
   },
   {
     id: "keck",
@@ -101,8 +115,15 @@ export const HOSPITALS: Hospital[] = [
       "Case manager name and contact number",
       "Referring physician name and contact number",
     ],
-    intakeNotes: "24/7 transfer center. Fax or email medical records with the listed information. Adult hospital only (no pediatrics, no obstetrics, not a trauma center).",
+    intakeNotes:
+      "24/7 transfer center, \"One Step Referral\": fax or email the medical records with the listed information; they confirm receipt within 30 minutes. Urgent: call (855) USC-BEDS. Adult hospital only (no pediatrics, no obstetrics, not a trauma center).",
     capabilities: ALL_ADULT,
+    workflow: [
+      { type: "send_fax", note: "One Step Referral: cover sheet with the required information + medical records. No Keck form needed." },
+      { type: "wait_for_call", note: "They confirm receipt within 30 minutes." },
+      { type: "call", note: "Only if they haven't called back within 30 minutes, or the transfer is urgent." },
+    ],
+    formUrls: [],
   },
   {
     id: "cedars",
@@ -121,20 +142,51 @@ export const HOSPITALS: Hospital[] = [
       "Authorization to transfer (if applicable)",
       "Non-EMTALA Request for Transfer form",
     ],
-    intakeNotes: "24/7 transfer center staffed by ICU nurses. Emergent/EMTALA: call. Non-emergent: fax the request form, face sheet and insurance card; the transfer center calls back.",
+    intakeNotes:
+      "24/7 transfer center staffed by ICU nurses. Emergent/EMTALA: call (310) 423-3277 instead. Non-emergent: fax the Non-EMTALA Request for Transfer form with face sheet and insurance card to (310) 423-3305, then call (310) 423-2400; the transfer center calls back.",
     capabilities: [...ALL_ADULT, "trauma_adult", "trauma_peds", "picu", "nicu", "high_risk_ob"],
+    workflow: [
+      { type: "fill_forms", note: "Non-EMTALA Request for Transfer." },
+      { type: "send_fax", note: "Add the face sheet, front and back of the insurance card, and authorization to transfer if applicable." },
+      { type: "call", note: "Tell them the request was faxed.", number: "+13104232400" },
+      { type: "wait_for_call", note: "The transfer center calls back with next steps." },
+    ],
+    formUrls: ["https://www.cedars-sinai.org/content/dam/cedars-sinai/programs-and-services/med-pros/Non-EMTALA-Request-for-Transfer-to-Cedars-Sinai-Inpatient.pdf"],
   },
 ];
 
-export const getHospital = (id: string | null | undefined) => HOSPITALS.find((h) => h.id === id);
+// ---------- Database ----------
 
-export function matchHospitalByEmail(email: string) {
+export async function listHospitals(): Promise<Hospital[]> {
+  let rows = await all<{ data: string }>("SELECT data FROM facilities");
+  if (!rows.length) {
+    for (const h of HOSPITALS) await saveHospital(h); // first run: add the built-in ones
+    rows = await all<{ data: string }>("SELECT data FROM facilities");
+  }
+  return rows.map((r) => JSON.parse(r.data) as Hospital).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function getHospital(id: string | null | undefined) {
+  return (await listHospitals()).find((h) => h.id === id);
+}
+
+export async function saveHospital(h: Hospital) {
+  await run("INSERT INTO facilities (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2", [h.id, JSON.stringify(h)]);
+}
+
+export async function deleteHospital(id: string) {
+  await run("DELETE FROM facilities WHERE id = $1", [id]);
+}
+
+export async function matchHospitalByEmail(email: string) {
   const domain = email.split("@")[1]?.toLowerCase() ?? "";
-  return HOSPITALS.find((h) => h.emailDomains.some((d) => domain === d || domain.endsWith(`.${d}`)));
+  return (await listHospitals()).find((h) => h.emailDomains.some((d) => domain === d || domain.endsWith(`.${d}`)));
 }
 
-export function matchHospitalByPhone(number: string) {
-  const digits = (n: string | null) => (n ?? "").replace(/\D/g, "").slice(-10);
+export async function matchHospitalByPhone(number: string) {
   const d = digits(number);
-  return HOSPITALS.find((h) => digits(h.transferPhone) === d || digits(h.transferFax) === d);
+  if (!d) return undefined;
+  return (await listHospitals()).find((h) => [h.transferPhone, h.transferFax, ...h.workflow.map((s) => s.number)].some((n) => digits(n) === d));
 }
+
+const digits = (n: string | null | undefined) => (n ?? "").replace(/\D/g, "").slice(-10);
