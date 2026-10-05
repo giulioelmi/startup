@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { audit, one, run } from "@/lib/db";
 import { getPatientRecord } from "@/lib/epic";
 import { summarize } from "@/lib/summary";
-import { createTransfer, getTransfer, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
+import { createTransfer, getTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
 import { getHospital } from "@/lib/hospitals";
 import { saveForm, type FieldValue, type FormField } from "@/lib/forms";
@@ -35,27 +35,31 @@ export async function startTransfer(f: FormData) {
   };
   const id = await createTransfer({ patientId, patientName: summary.patient.name, reason: str(f, "reason"), details, summary });
   await audit("user", "transfer.create", id, "chart snapshot from Epic");
-  const error = await rank(id); // on failure the page shows the error and offers a retry
-  redirect(`/transfers/${id}?step=hospital${error ? `&error=${encodeURIComponent(error)}` : ""}`);
+  await startRanking(id);
+  redirect("/");
 }
 
-// Returns the AI error message, or "" on success.
+// Ranking runs in the background; the nurse goes back to the list, which shows a loader on this case.
+async function startRanking(transferId: number) {
+  await setRankingStatus(transferId, "running");
+  after(() => rank(transferId));
+}
+
 async function rank(transferId: number) {
   try {
     const t = (await getTransfer(transferId))!;
     await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
+    await setRankingStatus(transferId, null);
     await audit("ai", "transfer.rank", transferId);
-    return "";
   } catch (e) {
     console.error(e);
-    return String((e as Error).message ?? e).slice(0, 500);
+    await setRankingStatus(transferId, "failed", String((e as Error).message ?? e).slice(0, 500)); // the page shows it and offers a retry
   }
 }
 
 export async function runRanking(transferId: number) {
-  const error = await rank(transferId);
-  if (error) redirect(`/transfers/${transferId}?step=hospital&error=${encodeURIComponent(error)}`);
-  revalidatePath(`/transfers/${transferId}`);
+  await startRanking(transferId);
+  redirect("/");
 }
 
 export async function chooseHospital(transferId: number, hospitalId: string) {

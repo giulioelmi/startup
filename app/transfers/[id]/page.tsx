@@ -6,7 +6,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
-import { Pill, STATUS_TONE, Stepper } from "@/components/ui";
+import { Pill, Spinner, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
@@ -28,7 +28,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const id = Number((await props.params).id);
   const t = await getTransfer(id);
   if (!t) notFound();
-  const q = (await props.searchParams) as { step?: string; doc?: string; error?: string };
+  const q = (await props.searchParams) as { step?: string; doc?: string };
   const { steps, next } = await progress(t);
   const step: StepId = STEP_IDS.includes(q.step as StepId) ? (q.step as StepId) : next;
 
@@ -38,7 +38,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 ORDER BY id DESC", [id]);
   const faxes = await all<FaxRow>("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = $1 ORDER BY id DESC", [id]);
   const events = await activity(id);
-  const busy = filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
+  const busy = t.rankingStatus === "running" || filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
   const p = t.summary.patient;
   const href = (s: string, doc?: string | number) => `/transfers/${id}?step=${s}${doc != null ? `&doc=${doc}` : ""}`;
 
@@ -78,7 +78,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
         <div className="space-y-6 lg:col-span-5">
           <section className="card space-y-4">
             {step === "chart" && <ChartStep t={t} />}
-            {step === "hospital" && <HospitalStep t={t} href={href} error={q.error} />}
+            {step === "hospital" && <HospitalStep t={t} href={href} />}
             {step === "forms" && <FormsStep t={t} hospital={hospital} filled={filled} reading={reading.length} selected={selectedFilled(filled, q.doc)} href={href} />}
             {step === "call" && <CallStep t={t} hospital={hospital} calls={calls} selected={Number(q.doc) || calls[0]?.id} href={href} />}
             {step === "fax" && <FaxStep t={t} hospital={hospital} filled={filled} faxes={faxes} href={href} />}
@@ -141,14 +141,21 @@ function ChartStep({ t }: { t: Transfer }) {
   );
 }
 
-function HospitalStep({ t, href, error }: { t: Transfer; href: Href; error?: string }) {
+function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
+  if (t.rankingStatus === "running")
+    return (
+      <>
+        <StepTitle n={2} title="Choose the receiving hospital" />
+        <p className="flex items-center gap-2 text-sm text-slate-600"><Spinner /> The AI is reviewing the chart and ranking hospitals…</p>
+      </>
+    );
   if (!t.ranking)
     return (
       <>
         <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
-        {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">AI error: {error}</p>}
+        {t.rankingError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">AI error: {t.rankingError}</p>}
         <form action={runRanking.bind(null, t.id)}>
-          <SubmitButton busy="AI is reviewing the chart…">Rank hospitals with AI</SubmitButton>
+          <SubmitButton busy="Starting…">Rank hospitals with AI</SubmitButton>
         </form>
       </>
     );

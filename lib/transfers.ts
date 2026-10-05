@@ -21,6 +21,8 @@ export type Transfer = {
   details: TransferDetails;
   summary: ClinicalSummary;
   ranking: Ranking | null;
+  rankingStatus: "running" | "failed" | null; // the AI ranks hospitals in the background
+  rankingError: string | null;
   hospitalId: string | null;
   status: "open" | "accepted" | "declined" | "cancelled";
   outcomeReason: string | null;
@@ -37,6 +39,8 @@ function parse(row: any): Transfer {
     details: JSON.parse(row.details),
     summary: JSON.parse(row.summary),
     ranking: row.ranking ? JSON.parse(row.ranking) : null,
+    rankingStatus: row.ranking_status,
+    rankingError: row.ranking_error,
     hospitalId: row.hospital_id,
     status: row.status,
     outcomeReason: row.outcome_reason,
@@ -65,6 +69,10 @@ export async function updateTransfer(id: number, fields: { ranking?: Ranking; ho
   if (fields.ranking) await run("UPDATE transfers SET ranking = $1 WHERE id = $2", [JSON.stringify(fields.ranking), id]);
   if (fields.hospitalId) await run("UPDATE transfers SET hospital_id = $1 WHERE id = $2", [fields.hospitalId, id]);
   if (fields.status) await run("UPDATE transfers SET status = $1, outcome_reason = $2 WHERE id = $3", [fields.status, fields.outcomeReason ?? null, id]);
+}
+
+export async function setRankingStatus(id: number, status: Transfer["rankingStatus"], error: string | null = null) {
+  await run("UPDATE transfers SET ranking_status = $1, ranking_error = $2 WHERE id = $3", [status, error, id]);
 }
 
 // Default "sending side" details come from env so staff don't retype them.

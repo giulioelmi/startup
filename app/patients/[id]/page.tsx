@@ -53,7 +53,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         </div>
         <input type="hidden" name="sendingPhone" value={d.sendingPhone} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emergent" /> Emergent (EMTALA)</label>
-        <SubmitButton busy="AI is reviewing the chart and ranking hospitals…">Start transfer →</SubmitButton>
+        <SubmitButton busy="Starting transfer…">Start transfer →</SubmitButton>
       </form>
       <div className="lg:col-span-7">
         <Summary s={summary} />
