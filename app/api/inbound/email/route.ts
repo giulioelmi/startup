@@ -4,6 +4,9 @@ import { processForm } from "@/lib/agent";
 import { saveForm } from "@/lib/forms";
 import { matchHospitalByEmail } from "@/lib/hospitals";
 
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
+
 // Forms emailed to us. Works with Postmark's inbound webhook (free tier):
 // set the inbound URL to  {PUBLIC_URL}/api/inbound/email?token={WEBHOOK_TOKEN}
 type PostmarkInbound = {
@@ -35,6 +38,6 @@ export async function POST(req: Request) {
     after(() => processForm(id)); // AI reads and fills it after we reply
     saved++;
   }
-  audit("inbound-email", "form.received", null, `${saved} attachment(s) from ${hospital?.id ?? "unknown sender"}`);
+  await audit("inbound-email", "form.received", null, `${saved} attachment(s) from ${hospital?.id ?? "unknown sender"}`);
   return Response.json({ saved });
 }

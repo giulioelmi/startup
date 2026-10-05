@@ -6,18 +6,22 @@ import { FieldEditor } from "@/components/FieldEditor";
 import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
-import { db } from "@/lib/db";
+import { all } from "@/lib/db";
 import { getForm, type FormField } from "@/lib/forms";
 import { HOSPITALS } from "@/lib/hospitals";
 
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
+
 export default async function FormPage(props: PageProps<"/forms/[id]">) {
   const id = Number((await props.params).id);
-  const form = getForm(id);
+  const form = await getForm(id);
   if (!form) notFound();
   const fields = JSON.parse(form.fields) as FormField[];
-  const usedIn = db
-    .prepare("SELECT ff.id, ff.transfer_id, ff.status, t.patient_name FROM filled_forms ff JOIN transfers t ON t.id = ff.transfer_id WHERE ff.form_id = ?")
-    .all(id) as { id: number; transfer_id: number; status: string; patient_name: string }[];
+  const usedIn = await all<{ id: number; transfer_id: number; status: string; patient_name: string }>(
+    "SELECT ff.id, ff.transfer_id, ff.status, t.patient_name FROM filled_forms ff JOIN transfers t ON t.id = ff.transfer_id WHERE ff.form_id = $1",
+    [id],
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-12">

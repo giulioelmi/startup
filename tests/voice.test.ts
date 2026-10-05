@@ -1,6 +1,6 @@
 import { beforeAll, expect, test, vi } from "vitest";
 import twilio from "twilio";
-import { db } from "@/lib/db";
+import { one } from "@/lib/db";
 import { summarize } from "@/lib/summary";
 import { createTransfer, getTransfer, updateTransfer } from "@/lib/transfers";
 import { getTranscript } from "@/lib/voice";
@@ -21,8 +21,8 @@ function twilioRequest(query: string, params: Record<string, string>, sign = tru
 }
 
 let id: number;
-beforeAll(() => {
-  id = createTransfer({
+beforeAll(async () => {
+  id = await createTransfer({
     patientId: "eTest123",
     patientName: "Camila Maria Lopez",
     reason: "NSTEMI, needs cardiac cath",
@@ -38,7 +38,7 @@ beforeAll(() => {
     },
     summary: summarize(record),
   });
-  updateTransfer(id, { hospitalId: "keck" });
+  await updateTransfer(id, { hospitalId: "keck" });
 });
 
 test("rejects requests without a valid Twilio signature", async () => {
@@ -66,9 +66,9 @@ test("answers a question from the chart and records an acceptance", async () => 
   askForObject.mockResolvedValueOnce({ say: "Thank you, goodbye.", pressDigits: "", outcome: "accepted", outcomeReason: "Accepted by Dr. Smith, CCU bed 4", endCall: true });
   res = await POST(twilioRequest(`step=turn&transfer=${id}`, { CallSid: "CA1", SpeechResult: "We accept, CCU bed 4, Dr. Smith accepting." }));
   expect(await res.text()).toContain("<Hangup/>");
-  expect(getTransfer(id)).toMatchObject({ status: "accepted", outcomeReason: "Accepted by Dr. Smith, CCU bed 4" });
-  expect(getTranscript("CA1").map((l) => l.who)).toEqual(["ai", "them", "ai", "them", "ai"]);
-  expect(db.prepare("SELECT status FROM calls WHERE call_sid = 'CA1'").get()).toEqual({ status: "completed" });
+  expect(await getTransfer(id)).toMatchObject({ status: "accepted", outcomeReason: "Accepted by Dr. Smith, CCU bed 4" });
+  expect((await getTranscript("CA1")).map((l) => l.who)).toEqual(["ai", "them", "ai", "them", "ai"]);
+  expect(await one("SELECT status FROM calls WHERE call_sid = 'CA1'")).toEqual({ status: "completed" });
 });
 
 test("stays quiet and keeps listening through hold music", async () => {

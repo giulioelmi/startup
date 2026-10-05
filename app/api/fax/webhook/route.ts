@@ -5,6 +5,9 @@ import { setFaxStatus } from "@/lib/fax";
 import { saveForm } from "@/lib/forms";
 import { matchHospitalByPhone } from "@/lib/hospitals";
 
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
+
 // Sinch fax events (JSON callbacks):
 //  - FAX_COMPLETED: delivery result of a fax we sent
 //  - INCOMING_FAX:  a hospital faxed us something -> saved as a form
@@ -27,9 +30,9 @@ export async function POST(req: Request) {
       sender: fax.from,
     });
     after(() => processForm(id)); // AI reads and fills it after we reply
-    audit("inbound-fax", "form.received", null, hospital?.id ?? "unknown sender");
+    await audit("inbound-fax", "form.received", null, hospital?.id ?? "unknown sender");
   } else if (fax.id && fax.status) {
-    setFaxStatus(fax.id, fax.status);
+    await setFaxStatus(fax.id, fax.status);
   }
   return new Response(null, { status: 204 });
 }

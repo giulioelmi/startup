@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { all, one, run } from "./db";
 import type { ClinicalSummary } from "./summary";
 import type { Ranking } from "./ranking";
 
@@ -44,26 +44,27 @@ function parse(row: any): Transfer {
   };
 }
 
-export function getTransfer(id: number): Transfer | null {
-  const row = db.prepare("SELECT * FROM transfers WHERE id = ?").get(id);
+export async function getTransfer(id: number): Promise<Transfer | null> {
+  const row = await one("SELECT * FROM transfers WHERE id = $1", [id]);
   return row ? parse(row) : null;
 }
 
-export function listTransfers(): Transfer[] {
-  return db.prepare("SELECT * FROM transfers ORDER BY id DESC").all().map(parse);
+export async function listTransfers(): Promise<Transfer[]> {
+  return (await all("SELECT * FROM transfers ORDER BY id DESC")).map(parse);
 }
 
-export function createTransfer(t: Pick<Transfer, "patientId" | "patientName" | "reason" | "details" | "summary">): number {
-  const r = db
-    .prepare("INSERT INTO transfers (patient_id, patient_name, reason, details, summary) VALUES (?, ?, ?, ?, ?)")
-    .run(t.patientId, t.patientName, t.reason, JSON.stringify(t.details), JSON.stringify(t.summary));
-  return Number(r.lastInsertRowid);
+export async function createTransfer(t: Pick<Transfer, "patientId" | "patientName" | "reason" | "details" | "summary">): Promise<number> {
+  const { id } = await run(
+    "INSERT INTO transfers (patient_id, patient_name, reason, details, summary) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+    [t.patientId, t.patientName, t.reason, JSON.stringify(t.details), JSON.stringify(t.summary)],
+  );
+  return id;
 }
 
-export function updateTransfer(id: number, fields: { ranking?: Ranking; hospitalId?: string; status?: Transfer["status"]; outcomeReason?: string }) {
-  if (fields.ranking) db.prepare("UPDATE transfers SET ranking = ? WHERE id = ?").run(JSON.stringify(fields.ranking), id);
-  if (fields.hospitalId) db.prepare("UPDATE transfers SET hospital_id = ? WHERE id = ?").run(fields.hospitalId, id);
-  if (fields.status) db.prepare("UPDATE transfers SET status = ?, outcome_reason = ? WHERE id = ?").run(fields.status, fields.outcomeReason ?? null, id);
+export async function updateTransfer(id: number, fields: { ranking?: Ranking; hospitalId?: string; status?: Transfer["status"]; outcomeReason?: string }) {
+  if (fields.ranking) await run("UPDATE transfers SET ranking = $1 WHERE id = $2", [JSON.stringify(fields.ranking), id]);
+  if (fields.hospitalId) await run("UPDATE transfers SET hospital_id = $1 WHERE id = $2", [fields.hospitalId, id]);
+  if (fields.status) await run("UPDATE transfers SET status = $1, outcome_reason = $2 WHERE id = $3", [fields.status, fields.outcomeReason ?? null, id]);
 }
 
 // Default "sending side" details come from env so staff don't retype them.

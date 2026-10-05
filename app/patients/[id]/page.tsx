@@ -6,12 +6,15 @@ import { getPatientRecord } from "@/lib/epic";
 import { summarize } from "@/lib/summary";
 import { defaultDetails } from "@/lib/transfers";
 
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
+
 export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const { id } = await props.params;
   let summary;
   try {
     summary = summarize(await getPatientRecord(id));
-    audit("user", "chart.view", null, "Epic patient chart");
+    await audit("user", "chart.view", null, "Epic patient chart");
   } catch (e) {
     return <p className="card text-rose-700">Could not load patient from Epic: {(e as Error).message}</p>;
   }

@@ -25,12 +25,24 @@ Prototype scope: Epic FHIR **sandbox** patients only; receiving hospitals **UCLA
 
 ## Run it
 
+Two ways. Either way, then set up the services below (Epic, AI model, Twilio, …).
+
+### On Vercel (recommended for the demo)
+1. In Vercel: **Add New → Project** → import this GitHub repo. Framework is detected (Next.js); no build settings to change.
+2. Project → **Storage** → **Create** → **Neon** (Postgres, free tier). This adds `DATABASE_URL` to the project. Tables are created automatically on first request.
+3. Project → **Settings → Environment Variables**: add the variables from `.env.example` (leave `DATA_DIR` out). Set `APP_PASSWORD` — the app is public on the internet.
+4. Deploy. Copy the production URL (e.g. `https://transfer-ai.vercel.app`) into `PUBLIC_URL` and **redeploy** (Twilio signatures are checked against it).
+5. Point the services at that URL: Epic JWK Set URL, Twilio webhooks, Postmark, Sinch (steps below).
+
+Vercel limits to know: uploads and incoming email/fax payloads must be under ~4.5 MB; AI work after a request may run up to 5 minutes.
+
+### On your laptop
 ```bash
 npm install
 cp .env.example .env     # fill in (see below)
 npm run dev              # http://localhost:3000
 ```
-
+No database account needed: without `DATABASE_URL` the app uses an embedded Postgres stored in `./data`.
 Phone, fax and email webhooks need a public HTTPS URL. Free option:
 `cloudflared tunnel --url http://localhost:3000` → put the URL in `PUBLIC_URL`.
 
@@ -79,7 +91,7 @@ lib/pdf-pages.ts  PDF pages -> images / text positions
 lib/voice.ts      Twilio calls + AI answers
 lib/fax.ts        fax packet + mock/Sinch sending
 lib/llm.ts        model-agnostic AI (env-selected provider)
-lib/db.ts         SQLite tables + audit log
+lib/db.ts         Postgres (Neon on Vercel, embedded PGlite locally) + audit log
 app/              pages, server actions (app/actions.ts), webhooks (app/api)
 ```
 
@@ -88,6 +100,6 @@ app/              pages, server actions (app/actions.ts), webhooks (app/api)
 ## Before real patient data (HIPAA)
 The prototype uses free services **without** BAAs, which is fine for synthetic sandbox data only. Before a pilot:
 - Sign BAAs and switch by env var: LLM → AWS Bedrock / Azure OpenAI / Anthropic or OpenAI enterprise; Twilio (HIPAA-eligible plan); Sinch fax; email provider.
-- Host on a BAA-covered platform (AWS/GCP with the Dockerfile), Postgres with encryption at rest, backups.
+- Database: Neon signs a BAA on its Scale plan (usage-based, no monthly minimum). Vercel also needs its own BAA (paid plan + HIPAA add-on); otherwise host on AWS/GCP with the Dockerfile and keep Neon or use RDS.
 - Replace the shared password with per-user login (SSO), and record the user in the audit log.
 - Confirm every hospital contact in `lib/hospitals.ts` (all are marked `verified: false`).

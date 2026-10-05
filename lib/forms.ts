@@ -10,7 +10,7 @@ import {
   StandardFonts,
   rgb,
 } from "pdf-lib";
-import { db } from "./db";
+import { all, bytes, one, run } from "./db";
 import { askForObject } from "./llm";
 import { HOSPITALS, type Hospital } from "./hospitals";
 import { pageImages, pageText, type TextItem } from "./pdf-pages";
@@ -42,24 +42,30 @@ export type FormRow = {
   received_at: string;
 };
 
-export const getForm = (id: number) => db.prepare("SELECT * FROM forms WHERE id = ?").get(id) as FormRow | undefined;
+export async function getForm(id: number): Promise<FormRow | undefined> {
+  const row = await one<FormRow>("SELECT * FROM forms WHERE id = $1", [id]);
+  return row && { ...row, pdf: bytes(row.pdf) };
+}
 
-export function listForms(hospitalId?: string) {
+export async function listForms(hospitalId?: string) {
   const sql = "SELECT id, hospital_id, name, fields, status, error, source, sender, received_at FROM forms";
-  const rows = hospitalId
-    ? db.prepare(`${sql} WHERE hospital_id = ? ORDER BY id DESC`).all(hospitalId)
-    : db.prepare(`${sql} ORDER BY id DESC`).all();
-  return rows as Omit<FormRow, "pdf">[];
+  return hospitalId
+    ? all<Omit<FormRow, "pdf">>(`${sql} WHERE hospital_id = $1 ORDER BY id DESC`, [hospitalId])
+    : all<Omit<FormRow, "pdf">>(`${sql} ORDER BY id DESC`);
 }
 
 // Store an incoming form (upload, email attachment or received fax).
 // The forms agent (lib/agent.ts) then reads and fills it.
 export async function saveForm(input: { name: string; bytes: Uint8Array; mime: string; hospitalId: string | null; source: string; sender?: string }) {
   const pdf = await toPdf(input.bytes, input.mime);
-  const r = db
-    .prepare("INSERT INTO forms (hospital_id, name, pdf, source, sender) VALUES (?, ?, ?, ?, ?)")
-    .run(input.hospitalId, input.name, Buffer.from(pdf), input.source, input.sender ?? null);
-  return Number(r.lastInsertRowid);
+  const { id } = await run("INSERT INTO forms (hospital_id, name, pdf, source, sender) VALUES ($1, $2, $3, $4, $5) RETURNING id", [
+    input.hospitalId,
+    input.name,
+    Buffer.from(pdf),
+    input.source,
+    input.sender ?? null,
+  ]);
+  return id;
 }
 
 // Photos/scans of a form become a one-page PDF so everything downstream is PDF.

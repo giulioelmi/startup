@@ -7,13 +7,16 @@ import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
 import { Pill, STATUS_TONE, Stepper } from "@/components/ui";
-import { db } from "@/lib/db";
+import { all } from "@/lib/db";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
 import { CAPABILITIES, getHospital, type Hospital } from "@/lib/hospitals";
-import { activity, progress, STEP_IDS, type StepId } from "@/lib/progress";
+import { activity, progress, STEP_IDS, type Activity, type StepId } from "@/lib/progress";
 import { getTransfer, type Transfer } from "@/lib/transfers";
 import type { Line } from "@/lib/voice";
+
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
 
 type CallRow = { id: number; direction: string; number: string; status: string; transcript: string; created_at: string };
 type FaxRow = { id: number; to_number: string; provider: string; status: string; created_at: string };
@@ -23,17 +26,18 @@ const LIVE_CALL = ["queued", "initiated", "ringing", "in-progress"];
 // the current step on the left, the document for that step on the right.
 export default async function TransferPage(props: PageProps<"/transfers/[id]">) {
   const id = Number((await props.params).id);
-  const t = getTransfer(id);
+  const t = await getTransfer(id);
   if (!t) notFound();
   const q = (await props.searchParams) as { step?: string; doc?: string };
-  const { steps, next } = progress(t);
+  const { steps, next } = await progress(t);
   const step: StepId = STEP_IDS.includes(q.step as StepId) ? (q.step as StepId) : next;
 
   const hospital = getHospital(t.hospitalId);
-  const filled = listFilled(id);
-  const reading = hospital ? listForms(hospital.id).filter((f) => f.status === "reading") : [];
-  const calls = db.prepare("SELECT * FROM calls WHERE transfer_id = ? ORDER BY id DESC").all(id) as CallRow[];
-  const faxes = db.prepare("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = ? ORDER BY id DESC").all(id) as FaxRow[];
+  const filled = await listFilled(id);
+  const reading = hospital ? (await listForms(hospital.id)).filter((f) => f.status === "reading") : [];
+  const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 ORDER BY id DESC", [id]);
+  const faxes = await all<FaxRow>("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = $1 ORDER BY id DESC", [id]);
+  const events = await activity(id);
   const busy = filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
   const p = t.summary.patient;
   const href = (s: string, doc?: string | number) => `/transfers/${id}?step=${s}${doc != null ? `&doc=${doc}` : ""}`;
@@ -82,12 +86,12 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
           </section>
           <section className="card">
             <h2 className="mb-4">Activity</h2>
-            <ActivityFeed items={activity(id)} limit={8} />
+            <ActivityFeed items={events} limit={8} />
           </section>
         </div>
 
         <div className="lg:col-span-7">
-          <Document t={t} step={step} hospital={hospital} filled={filled} calls={calls} faxes={faxes} doc={q.doc} />
+          <Document t={t} step={step} hospital={hospital} filled={filled} calls={calls} faxes={faxes} events={events} doc={q.doc} />
         </div>
       </div>
     </div>
@@ -380,7 +384,7 @@ function OutcomeStep({ t }: { t: Transfer }) {
 
 // ---------------- Right: the document for the current step ----------------
 
-function Document({ t, step, hospital, filled, calls, faxes, doc }: { t: Transfer; step: StepId; hospital?: Hospital; filled: Filled[]; calls: CallRow[]; faxes: FaxRow[]; doc?: string }) {
+function Document({ t, step, hospital, filled, calls, faxes, events, doc }: { t: Transfer; step: StepId; hospital?: Hospital; filled: Filled[]; calls: CallRow[]; faxes: FaxRow[]; events: Activity[]; doc?: string }) {
   const frame = (title: string, sub: string, body: React.ReactNode, link?: string) => (
     <section className="card sticky top-20 space-y-4 bg-slate-100/60">
       <div className="flex items-center justify-between">
@@ -423,7 +427,7 @@ function Document({ t, step, hospital, filled, calls, faxes, doc }: { t: Transfe
     return frame("Fax packet", sent ? `Sent ${sent.created_at} UTC to ${sent.to_number}` : "Preview — what will be faxed", <PdfViewer key={url} url={url} />, url);
   }
 
-  return frame("Transfer timeline", "Everything the AI and staff did", <ActivityFeed items={activity(t.id)} />);
+  return frame("Transfer timeline", "Everything the AI and staff did", <ActivityFeed items={events} />);
 }
 
 function HospitalProfile({ h }: { h: Hospital }) {

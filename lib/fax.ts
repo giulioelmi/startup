@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
-import { db } from "./db";
+import { run } from "./db";
 import type { Hospital } from "./hospitals";
 import type { Transfer } from "./transfers";
 
@@ -102,16 +102,16 @@ export async function sendFax(transferId: number, to: string, pdf: Uint8Array) {
     status = (json.status ?? "queued").toLowerCase();
   }
 
-  db.prepare("INSERT INTO faxes (transfer_id, to_number, provider, provider_id, status, pdf) VALUES (?, ?, ?, ?, ?, ?)").run(
+  await run("INSERT INTO faxes (transfer_id, to_number, provider, provider_id, status, pdf) VALUES ($1, $2, $3, $4, $5, $6)", [
     transferId,
     to,
     provider,
     providerId,
     status,
     Buffer.from(pdf),
-  );
+  ]);
 }
 
-export function setFaxStatus(providerId: string, status: string) {
-  db.prepare("UPDATE faxes SET status = ? WHERE provider_id = ?").run(status.toLowerCase(), providerId);
+export async function setFaxStatus(providerId: string, status: string) {
+  await run("UPDATE faxes SET status = $1 WHERE provider_id = $2", [status.toLowerCase(), providerId]);
 }

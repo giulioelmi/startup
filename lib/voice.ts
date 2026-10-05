@@ -1,6 +1,6 @@
 import twilio from "twilio";
 import { z } from "zod";
-import { db } from "./db";
+import { one, run } from "./db";
 import { askForObject } from "./llm";
 import { getHospital } from "./hospitals";
 import type { Transfer } from "./transfers";
@@ -22,22 +22,22 @@ export async function startCall(transferId: number, to: string) {
     statusCallback: `${base}/status`,
     statusCallbackEvent: ["initiated", "answered", "completed"],
   });
-  db.prepare("INSERT INTO calls (transfer_id, call_sid, direction, number, status) VALUES (?, ?, 'outbound', ?, ?)").run(
+  await run("INSERT INTO calls (transfer_id, call_sid, direction, number, status) VALUES ($1, $2, 'outbound', $3, $4)", [
     transferId,
     call.sid,
     to,
     call.status,
-  );
+  ]);
 }
 
-export function getTranscript(callSid: string): Line[] {
-  const row = db.prepare("SELECT transcript FROM calls WHERE call_sid = ?").get(callSid) as { transcript: string } | undefined;
+export async function getTranscript(callSid: string): Promise<Line[]> {
+  const row = await one<{ transcript: string }>("SELECT transcript FROM calls WHERE call_sid = $1", [callSid]);
   return row ? JSON.parse(row.transcript) : [];
 }
 
-export function addLine(callSid: string, who: Line["who"], text: string) {
-  const lines = [...getTranscript(callSid), { who, text, at: new Date().toISOString() }];
-  db.prepare("UPDATE calls SET transcript = ? WHERE call_sid = ?").run(JSON.stringify(lines), callSid);
+export async function addLine(callSid: string, who: Line["who"], text: string) {
+  const lines = [...(await getTranscript(callSid)), { who, text, at: new Date().toISOString() }];
+  await run("UPDATE calls SET transcript = $1 WHERE call_sid = $2", [JSON.stringify(lines), callSid]);
 }
 
 // What the AI says first, without waiting on the model. Discloses it is an AI.

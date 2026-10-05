@@ -6,10 +6,13 @@ import { Pill } from "@/components/ui";
 import { listForms, type FormField } from "@/lib/forms";
 import { HOSPITALS, getHospital } from "@/lib/hospitals";
 
+// AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
+export const maxDuration = 300;
+
 const SOURCE = { upload: "⬆ Upload", email: "✉ Email", fax: "📠 Fax" } as Record<string, string>;
 
-export default function FormsPage() {
-  const forms = listForms();
+export default async function FormsPage() {
+  const forms = await listForms();
   return (
     <div className="space-y-6">
       {forms.some((f) => f.status === "reading") && <AutoRefresh seconds={2} />}

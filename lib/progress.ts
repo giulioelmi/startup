@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { all, one } from "./db";
 import { getHospital } from "./hospitals";
 import { listFilled } from "./filled";
 import type { Transfer } from "./transfers";
@@ -7,10 +7,10 @@ import type { Transfer } from "./transfers";
 export const STEP_IDS = ["chart", "hospital", "forms", "call", "fax", "outcome"] as const;
 export type StepId = (typeof STEP_IDS)[number];
 
-export function progress(t: Transfer) {
-  const filled = listFilled(t.id);
-  const callDone = !!db.prepare("SELECT 1 FROM calls WHERE transfer_id = ? AND status = 'completed'").get(t.id);
-  const faxed = !!db.prepare("SELECT 1 FROM faxes WHERE transfer_id = ?").get(t.id);
+export async function progress(t: Transfer) {
+  const filled = await listFilled(t.id);
+  const callDone = !!(await one("SELECT 1 FROM calls WHERE transfer_id = $1 AND status = 'completed'", [t.id]));
+  const faxed = !!(await one("SELECT 1 FROM faxes WHERE transfer_id = $1", [t.id]));
   const steps = [
     { id: "chart", title: "Chart", done: true },
     { id: "hospital", title: "Hospital", done: !!t.hospitalId },
@@ -41,13 +41,11 @@ const LABELS: Record<string, string> = {
 
 export type Activity = { at: string; ai: boolean; text: string; detail: string | null };
 
-export function activity(transferId: number): Activity[] {
-  const rows = db.prepare("SELECT at, actor, action, detail FROM audit WHERE transfer_id = ? ORDER BY id DESC").all(transferId) as {
-    at: string;
-    actor: string;
-    action: string;
-    detail: string | null;
-  }[];
+export async function activity(transferId: number): Promise<Activity[]> {
+  const rows = await all<{ at: string; actor: string; action: string; detail: string | null }>(
+    "SELECT at, actor, action, detail FROM audit WHERE transfer_id = $1 ORDER BY id DESC",
+    [transferId],
+  );
   return rows
     .filter((r) => LABELS[r.action])
     .map((r) => ({
