@@ -145,22 +145,32 @@ function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
   if (!t.ranking)
     return (
       <>
-        <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
+        <StepTitle n={2} title="Choose the receiving hospital">The hospitals have not been ranked yet.</StepTitle>
         <form action={runRanking.bind(null, t.id)}>
-          <SubmitButton busy="AI is reviewing the chart…">Rank hospitals with AI</SubmitButton>
+          <SubmitButton busy="AI is reviewing the chart…">Rank hospitals</SubmitButton>
         </form>
       </>
     );
+  const noAI = t.ranking.ai === false;
   return (
     <>
       <StepTitle n={2} title="Choose the receiving hospital" />
-      <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
-        <p className="font-semibold">The patient needs</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {t.ranking.needs.length ? t.ranking.needs.map((n) => <Pill key={n} tone="teal">{CAPABILITIES[n]}</Pill>) : <Pill>No specialized service</Pill>}
+      {noAI ? (
+        <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{t.ranking.needsExplanation}</p>
+          <form action={runRanking.bind(null, t.id)}>
+            <SubmitButton className="btn-light" busy="AI is reviewing the chart…">Re-run AI ranking</SubmitButton>
+          </form>
         </div>
-        <p className="mt-2">{t.ranking.needsExplanation}</p>
-      </div>
+      ) : (
+        <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+          <p className="font-semibold">The patient needs</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {t.ranking.needs.length ? t.ranking.needs.map((n) => <Pill key={n} tone="teal">{CAPABILITIES[n]}</Pill>) : <Pill>No specialized service</Pill>}
+          </div>
+          <p className="mt-2">{t.ranking.needsExplanation}</p>
+        </div>
+      )}
       <div className="space-y-3">
         {t.ranking.hospitals.map((r, i) => {
           const h = getHospital(r.hospitalId)!;
@@ -181,7 +191,11 @@ function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
               </div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
                 {r.distanceMiles != null && <Pill>{r.distanceMiles} mi</Pill>}
-                {r.eligible ? <Pill tone="green">All needed services</Pill> : <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>}
+                {noAI ? null : r.eligible ? (
+                  <Pill tone="green">All needed services</Pill>
+                ) : (
+                  <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>
+                )}
               </div>
               <p className="mt-2 text-sm text-slate-600">{r.rationale}</p>
             </div>

@@ -10,7 +10,8 @@ export type RankedHospital = {
   distanceMiles: number | null;
   rationale: string;
 };
-export type Ranking = { needs: Capability[]; needsExplanation: string; hospitals: RankedHospital[] };
+// `ai: false` means the AI was unavailable: hospitals are ordered by distance only.
+export type Ranking = { ai?: boolean; needs: Capability[]; needsExplanation: string; hospitals: RankedHospital[] };
 
 export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number) {
   const rad = (d: number) => (d * Math.PI) / 180;
@@ -42,9 +43,20 @@ function sendingLocation() {
 
 const capabilityIds = Object.keys(CAPABILITIES) as [Capability, ...Capability[]];
 
+// Always returns a ranking: if the AI is down, hospitals are ordered by distance and the page offers a re-run.
+export async function rankHospitals(summary: ClinicalSummary, reason: string): Promise<Ranking> {
+  try {
+    return { ai: true, ...(await rankWithAI(summary, reason)) };
+  } catch (e) {
+    console.error("AI ranking failed:", (e as Error).message);
+    const hospitals = rank([], HOSPITALS, sendingLocation()).map((r) => ({ ...r, rationale: "" }));
+    return { ai: false, needs: [], needsExplanation: "The AI is unavailable right now, so hospitals are ordered by distance only. Check the services the patient needs, or re-run the AI.", hospitals };
+  }
+}
+
 // AI part: decide which capabilities the patient needs, and explain each option.
 // It only sees the chart summary and our hospital profiles; it is told not to use outside facts.
-export async function rankHospitals(summary: ClinicalSummary, reason: string): Promise<Ranking> {
+async function rankWithAI(summary: ClinicalSummary, reason: string): Promise<Ranking> {
   const { needs, needsExplanation } = await askForObject(
     z.object({
       needs: z.array(z.enum(capabilityIds)),

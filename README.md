@@ -57,6 +57,7 @@ Any model works by changing two variables. Reading scanned/faxed forms needs a m
 - Gemini free tier (recommended: good at finding blanks on scans): `LLM_PROVIDER=google`, `LLM_MODEL=gemini-flash-latest`, key from https://aistudio.google.com
 - Local, no data leaves your machine: `LLM_PROVIDER=ollama`, `LLM_MODEL=qwen2.5vl:7b` (or another vision model you've pulled)
 - Also: `anthropic`, `openai`, or any OpenAI-compatible endpoint (`LLM_PROVIDER=<name>` + `LLM_BASE_URL`).
+- If the main model fails (e.g. Gemini's "high demand" errors), the app retries once with `LLM_FALLBACK_MODEL` (default for Gemini: `gemini-flash-lite-latest`). If both fail, hospitals are still ranked by distance and the page offers a re-run.
 
 ### 3. Twilio (real calls, ~$1.15/month per number + ~$0.014/min)
 1. Create an account, buy a voice number → `TWILIO_*` vars. (Trial accounts can only call verified numbers and play a trial message; upgrading with ~$20 removes that.)

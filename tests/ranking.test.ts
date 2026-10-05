@@ -1,6 +1,9 @@
-import { expect, test } from "vitest";
-import { distanceMiles, rank } from "@/lib/ranking";
+import { expect, test, vi } from "vitest";
+import { distanceMiles, rank, rankHospitals } from "@/lib/ranking";
 import { HOSPITALS } from "@/lib/hospitals";
+import type { ClinicalSummary } from "@/lib/summary";
+
+vi.mock("@/lib/llm", () => ({ askForObject: vi.fn().mockRejectedValue(new Error("This model is currently experiencing high demand")) }));
 
 const pomona = { lat: 34.0551, lng: -117.7523 }; // a community hospital east of LA
 
@@ -20,4 +23,10 @@ test("distance is roughly right", () => {
   const ucla = HOSPITALS.find((h) => h.id === "ucla")!;
   expect(distanceMiles(keck.lat, keck.lng, ucla.lat, ucla.lng)).toBeGreaterThan(12);
   expect(distanceMiles(keck.lat, keck.lng, ucla.lat, ucla.lng)).toBeLessThan(15);
+});
+
+test("when the AI is down, hospitals are still ranked (by distance) instead of failing", async () => {
+  const r = await rankHospitals({} as ClinicalSummary, "NSTEMI");
+  expect(r.ai).toBe(false);
+  expect(r.hospitals).toHaveLength(HOSPITALS.length);
 });
