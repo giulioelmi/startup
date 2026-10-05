@@ -16,7 +16,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     summary = summarize(await getPatientRecord(id));
     await audit("user", "chart.view", null, "Epic patient chart");
   } catch (e) {
-    return <p className="card text-rose-700">Could not load patient from Epic: {(e as Error).message}</p>;
+    return (
+      <div className="card space-y-2 text-rose-700">
+        <p>Could not load patient from Epic: {(e as Error).message}</p>
+        <a href="/epic-check" className="btn-light">Run Epic connection check</a>
+      </div>
+    );
   }
   const d = defaultDetails();
   const field = (name: keyof typeof d, label: string, required = false) => (

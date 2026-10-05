@@ -10,16 +10,25 @@ export type FhirResource = { resourceType: string; id?: string; [key: string]: u
 
 let cached: { token: string; expires: number } | null = null;
 
-async function getToken(): Promise<string> {
-  if (cached && cached.expires > Date.now() + 30_000) return cached.token;
+// What the server actually uses. Values are trimmed: a stray space or newline
+// pasted into Vercel makes Epic reply "invalid_client".
+export function epicConfig() {
+  return {
+    clientId: process.env.EPIC_CLIENT_ID?.trim() || null,
+    keyId: process.env.EPIC_KEY_ID?.trim() || "transfer-ai-1",
+    pem: process.env.EPIC_PRIVATE_KEY?.replace(/\\n/g, "\n").trim() || null,
+    tokenUrl: TOKEN_URL,
+    fhirBase: FHIR_BASE,
+  };
+}
 
-  const clientId = process.env.EPIC_CLIENT_ID;
-  const pem = process.env.EPIC_PRIVATE_KEY?.replace(/\\n/g, "\n");
+// The signed JWT that proves who we are (SMART Backend Services client assertion).
+export async function buildAssertion() {
+  const { clientId, keyId, pem } = epicConfig();
   if (!clientId || !pem) throw new Error("Epic is not configured: set EPIC_CLIENT_ID and EPIC_PRIVATE_KEY (see README).");
-
   const key = await importPKCS8(pem, "RS384");
-  const assertion = await new SignJWT({})
-    .setProtectedHeader({ alg: "RS384", typ: "JWT", kid: process.env.EPIC_KEY_ID || "transfer-ai-1" })
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "RS384", typ: "JWT", kid: keyId })
     .setIssuer(clientId)
     .setSubject(clientId)
     .setAudience(TOKEN_URL)
@@ -27,7 +36,9 @@ async function getToken(): Promise<string> {
     .setIssuedAt()
     .setExpirationTime("4m") // Epic allows at most 5 minutes
     .sign(key);
+}
 
+export async function requestToken(assertion: string) {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -37,8 +48,14 @@ async function getToken(): Promise<string> {
       client_assertion: assertion,
     }),
   });
-  if (!res.ok) throw new Error(`Epic token request failed (${res.status}): ${await res.text()}`);
-  const json = await res.json();
+  return { status: res.status, body: await res.text() };
+}
+
+async function getToken(): Promise<string> {
+  if (cached && cached.expires > Date.now() + 30_000) return cached.token;
+  const { status, body } = await requestToken(await buildAssertion());
+  if (status !== 200) throw new Error(`Epic token request failed (${status}): ${body}`);
+  const json = JSON.parse(body);
   cached = { token: json.access_token, expires: Date.now() + json.expires_in * 1000 };
   return cached.token;
 }
