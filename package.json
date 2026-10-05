@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/",
+    "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/",
     "test": "vitest run",
     "epic:key": "node scripts/gen-epic-key.mjs"
   },
