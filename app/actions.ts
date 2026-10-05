@@ -35,18 +35,26 @@ export async function startTransfer(f: FormData) {
   };
   const id = await createTransfer({ patientId, patientName: summary.patient.name, reason: str(f, "reason"), details, summary });
   await audit("user", "transfer.create", id, "chart snapshot from Epic");
-  await rank(id).catch(() => {}); // on failure the page offers a retry
-  redirect(`/transfers/${id}?step=hospital`);
+  const error = await rank(id); // on failure the page shows the error and offers a retry
+  redirect(`/transfers/${id}?step=hospital${error ? `&error=${encodeURIComponent(error)}` : ""}`);
 }
 
+// Returns the AI error message, or "" on success.
 async function rank(transferId: number) {
-  const t = (await getTransfer(transferId))!;
-  await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
-  await audit("ai", "transfer.rank", transferId);
+  try {
+    const t = (await getTransfer(transferId))!;
+    await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
+    await audit("ai", "transfer.rank", transferId);
+    return "";
+  } catch (e) {
+    console.error(e);
+    return String((e as Error).message ?? e).slice(0, 500);
+  }
 }
 
 export async function runRanking(transferId: number) {
-  await rank(transferId);
+  const error = await rank(transferId);
+  if (error) redirect(`/transfers/${transferId}?step=hospital&error=${encodeURIComponent(error)}`);
   revalidatePath(`/transfers/${transferId}`);
 }
 

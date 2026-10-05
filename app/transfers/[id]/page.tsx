@@ -28,7 +28,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const id = Number((await props.params).id);
   const t = await getTransfer(id);
   if (!t) notFound();
-  const q = (await props.searchParams) as { step?: string; doc?: string };
+  const q = (await props.searchParams) as { step?: string; doc?: string; error?: string };
   const { steps, next } = await progress(t);
   const step: StepId = STEP_IDS.includes(q.step as StepId) ? (q.step as StepId) : next;
 
@@ -78,7 +78,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
         <div className="space-y-6 lg:col-span-5">
           <section className="card space-y-4">
             {step === "chart" && <ChartStep t={t} />}
-            {step === "hospital" && <HospitalStep t={t} href={href} />}
+            {step === "hospital" && <HospitalStep t={t} href={href} error={q.error} />}
             {step === "forms" && <FormsStep t={t} hospital={hospital} filled={filled} reading={reading.length} selected={selectedFilled(filled, q.doc)} href={href} />}
             {step === "call" && <CallStep t={t} hospital={hospital} calls={calls} selected={Number(q.doc) || calls[0]?.id} href={href} />}
             {step === "fax" && <FaxStep t={t} hospital={hospital} filled={filled} faxes={faxes} href={href} />}
@@ -141,11 +141,12 @@ function ChartStep({ t }: { t: Transfer }) {
   );
 }
 
-function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
+function HospitalStep({ t, href, error }: { t: Transfer; href: Href; error?: string }) {
   if (!t.ranking)
     return (
       <>
         <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
+        {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">AI error: {error}</p>}
         <form action={runRanking.bind(null, t.id)}>
           <SubmitButton busy="AI is reviewing the chart…">Rank hospitals with AI</SubmitButton>
         </form>
