@@ -7,7 +7,7 @@ import { audit, one, run } from "@/lib/db";
 import { getPatientRecord } from "@/lib/epic";
 import { summarize } from "@/lib/summary";
 import { createTransfer, getTransfer, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
-import { rankHospitals } from "@/lib/ranking";
+import { rankHospitals, unranked } from "@/lib/ranking";
 import { getHospital } from "@/lib/hospitals";
 import { saveForm, type FieldValue, type FormField } from "@/lib/forms";
 import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/filled";
@@ -35,14 +35,19 @@ export async function startTransfer(f: FormData) {
   };
   const id = await createTransfer({ patientId, patientName: summary.patient.name, reason: str(f, "reason"), details, summary });
   await audit("user", "transfer.create", id, "chart snapshot from Epic");
-  await rank(id).catch(() => {}); // on failure the page offers a retry
+  await rank(id);
   redirect(`/transfers/${id}?step=hospital`);
 }
 
 async function rank(transferId: number) {
   const t = (await getTransfer(transferId))!;
-  await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
-  await audit("ai", "transfer.rank", transferId);
+  try {
+    await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
+    await audit("ai", "transfer.rank", transferId);
+  } catch (e) {
+    // AI down (out of credits, overloaded, bad key...): list the hospitals anyway so staff can choose.
+    await updateTransfer(transferId, { ranking: unranked((e as Error).message) });
+  }
 }
 
 export async function runRanking(transferId: number) {

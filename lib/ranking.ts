@@ -10,7 +10,7 @@ export type RankedHospital = {
   distanceMiles: number | null;
   rationale: string;
 };
-export type Ranking = { needs: Capability[]; needsExplanation: string; hospitals: RankedHospital[] };
+export type Ranking = { needs: Capability[]; needsExplanation: string; hospitals: RankedHospital[]; error?: string };
 
 export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number) {
   const rad = (d: number) => (d * Math.PI) / 180;
@@ -69,6 +69,11 @@ export async function rankHospitals(summary: ClinicalSummary, reason: string): P
     needsExplanation,
     hospitals: ranked.map((r) => ({ ...r, rationale: rationales.find((x) => x.hospitalId === r.hospitalId)?.rationale ?? "" })),
   };
+}
+
+// When the AI can't run: every hospital, closest first, so staff can still choose one themselves.
+export function unranked(error: string): Ranking {
+  return { needs: [], needsExplanation: "", error, hospitals: rank([], HOSPITALS, sendingLocation()).map((r) => ({ ...r, rationale: "" })) };
 }
 
 const pick = (h: Hospital) => ({ name: h.name, intakeNotes: h.intakeNotes });

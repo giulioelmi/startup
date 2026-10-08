@@ -10,7 +10,8 @@ import { Pill, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
-import { CAPABILITIES, getHospital, type Hospital } from "@/lib/hospitals";
+import { CAPABILITIES, getHospital, HOSPITALS, type Hospital } from "@/lib/hospitals";
+import { unranked } from "@/lib/ranking";
 import { activity, progress, STEP_IDS, type Activity, type StepId } from "@/lib/progress";
 import { getTransfer, type Transfer } from "@/lib/transfers";
 import type { Line } from "@/lib/voice";
@@ -142,27 +143,31 @@ function ChartStep({ t }: { t: Transfer }) {
 }
 
 function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
-  if (!t.ranking)
-    return (
-      <>
-        <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
-        <form action={runRanking.bind(null, t.id)}>
-          <SubmitButton busy="AI is reviewing the chart…">Rank hospitals with AI</SubmitButton>
-        </form>
-      </>
-    );
+  const ranking = t.ranking ?? unranked("Not ranked yet.");
   return (
     <>
-      <StepTitle n={2} title="Choose the receiving hospital" />
-      <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
-        <p className="font-semibold">The patient needs</p>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {t.ranking.needs.length ? t.ranking.needs.map((n) => <Pill key={n} tone="teal">{CAPABILITIES[n]}</Pill>) : <Pill>No specialized service</Pill>}
+      <StepTitle n={2} title="Choose the receiving hospital">Pick any hospital; the AI ranking is only a suggestion.</StepTitle>
+      {ranking.error ? (
+        <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            <span className="font-semibold">The AI could not rank the hospitals:</span> {ranking.error}
+          </p>
+          <p>They are listed closest first.</p>
+          <form action={runRanking.bind(null, t.id)}>
+            <SubmitButton className="btn-light" busy="AI is reviewing the chart…">Try AI ranking again</SubmitButton>
+          </form>
         </div>
-        <p className="mt-2">{t.ranking.needsExplanation}</p>
-      </div>
+      ) : (
+        <div className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">
+          <p className="font-semibold">The patient needs</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {ranking.needs.length ? ranking.needs.map((n) => <Pill key={n} tone="teal">{CAPABILITIES[n]}</Pill>) : <Pill>No specialized service</Pill>}
+          </div>
+          <p className="mt-2">{ranking.needsExplanation}</p>
+        </div>
+      )}
       <div className="space-y-3">
-        {t.ranking.hospitals.map((r, i) => {
+        {ranking.hospitals.map((r, i) => {
           const h = getHospital(r.hospitalId)!;
           const chosen = t.hospitalId === h.id;
           return (
@@ -181,7 +186,7 @@ function HospitalStep({ t, href }: { t: Transfer; href: Href }) {
               </div>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
                 {r.distanceMiles != null && <Pill>{r.distanceMiles} mi</Pill>}
-                {r.eligible ? <Pill tone="green">All needed services</Pill> : <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>}
+                {ranking.error ? null : r.eligible ? <Pill tone="green">All needed services</Pill> : <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>}
               </div>
               <p className="mt-2 text-sm text-slate-600">{r.rationale}</p>
             </div>
@@ -402,8 +407,8 @@ function Document({ t, step, hospital, filled, calls, faxes, events, doc }: { t:
   if (step === "chart") return frame("Epic chart summary", `Snapshot ${t.createdAt} UTC`, <Summary s={t.summary} />);
 
   if (step === "hospital") {
-    const h = getHospital(doc) ?? hospital ?? getHospital(t.ranking?.hospitals[0]?.hospitalId);
-    return h ? frame(h.name, "Transfer center profile", <HospitalProfile h={h} />) : frame("Hospital", "", <p className="text-sm text-slate-500">No ranking yet.</p>);
+    const h = getHospital(doc) ?? hospital ?? getHospital(t.ranking?.hospitals[0]?.hospitalId) ?? HOSPITALS[0];
+    return frame(h.name, "Transfer center profile", <HospitalProfile h={h} />);
   }
 
   if (step === "forms") {

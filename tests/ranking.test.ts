@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { distanceMiles, rank } from "@/lib/ranking";
+import { distanceMiles, rank, unranked } from "@/lib/ranking";
 import { HOSPITALS } from "@/lib/hospitals";
 
 const pomona = { lat: 34.0551, lng: -117.7523 }; // a community hospital east of LA
@@ -20,4 +20,10 @@ test("distance is roughly right", () => {
   const ucla = HOSPITALS.find((h) => h.id === "ucla")!;
   expect(distanceMiles(keck.lat, keck.lng, ucla.lat, ucla.lng)).toBeGreaterThan(12);
   expect(distanceMiles(keck.lat, keck.lng, ucla.lat, ucla.lng)).toBeLessThan(15);
+});
+
+test("without the AI, every hospital is still listed so staff can choose", () => {
+  const r = unranked("credit balance too low");
+  expect(r.error).toBe("credit balance too low");
+  expect(r.hospitals.map((h) => h.hospitalId).sort()).toEqual(HOSPITALS.map((h) => h.id).sort());
 });
