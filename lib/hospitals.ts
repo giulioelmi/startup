@@ -45,6 +45,7 @@ export type Hospital = {
   capabilities: Capability[];
   workflow: WorkflowStep[];
   formUrls: string[]; // the hospital's public forms; downloaded into the forms inbox
+  edited?: boolean; // changed by staff: built-in updates no longer overwrite it
 };
 
 const ALL_ADULT: Capability[] = [
@@ -85,7 +86,7 @@ export const HOSPITALS: Hospital[] = [
       "Call the UCLA Patient Transfer Center first; they arrange a physician-to-physician conversation. Have the information from UCLA's transfer packet ready and fax it when asked.",
     capabilities: [...ALL_ADULT, "trauma_adult", "trauma_peds", "picu", "nicu", "high_risk_ob"],
     workflow: [
-      { type: "call", note: "Request the transfer. They arrange a physician-to-physician call and say where to fax records." },
+      { type: "call", note: "Menu: 1 = physician / life-threatening / ER, 2 = transplant, 3 = RN or case manager (urgent or non-emergent). Have the answers to UCLA's transfer questionnaire ready (https://uclahealth.acquiaedge.net/sites/default/files/documents/95/questions-refering-facilities-ucla-transfer-center.docx). They arrange a physician-to-physician call and say where to fax records." },
       { type: "receive_forms", note: "UCLA's transfer packet: upload it to the Forms inbox, or ask them to fax/email it." },
       { type: "fill_forms", note: "" },
       { type: "send_fax", note: "Use the fax number they gave on the call." },
@@ -116,7 +117,7 @@ export const HOSPITALS: Hospital[] = [
       "Referring physician name and contact number",
     ],
     intakeNotes:
-      "24/7 transfer center, \"One Step Referral\": fax or email the medical records with the listed information; they confirm receipt within 30 minutes. Urgent: call (855) USC-BEDS. Adult hospital only (no pediatrics, no obstetrics, not a trauma center).",
+      "24/7 transfer center, \"One Step Referral\": fax or email the medical records with the listed information; they confirm receipt within 30 minutes. Urgent: call (855) USC-BEDS. ECMO or cardiogenic shock: call (866) USC-ECMO. Adult hospital only (no pediatrics, no obstetrics, not a trauma center).",
     capabilities: ALL_ADULT,
     workflow: [
       { type: "send_fax", note: "One Step Referral: cover sheet with the required information + medical records. No Keck form needed." },
@@ -158,12 +159,17 @@ export const HOSPITALS: Hospital[] = [
 // ---------- Database ----------
 
 export async function listHospitals(): Promise<Hospital[]> {
-  let rows = await all<{ data: string }>("SELECT data FROM facilities");
-  if (!rows.length) {
-    for (const h of HOSPITALS) await saveHospital(h); // first run: add the built-in ones
-    rows = await all<{ data: string }>("SELECT data FROM facilities");
+  let saved = (await all<{ data: string }>("SELECT data FROM facilities")).map((r) => JSON.parse(r.data) as Hospital);
+  // First run: add the built-in ones. After that, keep them up to date unless staff edited or deleted them.
+  const stale = HOSPITALS.filter((b) => {
+    const h = saved.find((x) => x.id === b.id);
+    return h ? !h.edited && JSON.stringify(h) !== JSON.stringify(b) : !saved.length;
+  });
+  if (stale.length) {
+    for (const h of stale) await saveHospital(h);
+    saved = (await all<{ data: string }>("SELECT data FROM facilities")).map((r) => JSON.parse(r.data) as Hospital);
   }
-  return rows.map((r) => JSON.parse(r.data) as Hospital).sort((a, b) => a.name.localeCompare(b.name));
+  return saved.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function getHospital(id: string | null | undefined) {

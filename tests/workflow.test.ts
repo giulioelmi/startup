@@ -17,6 +17,15 @@ test("the built-in facilities are added on first use, each with a workflow", asy
   expect(hospitals.every((h) => h.workflow.length > 0)).toBe(true);
 });
 
+test("built-in facilities get our updates unless staff edited them", async () => {
+  const ucla = (await getHospital("ucla"))!;
+  await saveHospital({ ...ucla, intakeNotes: "old notes" });
+  expect((await getHospital("ucla"))!.intakeNotes).toBe(ucla.intakeNotes);
+  await saveHospital({ ...ucla, intakeNotes: "staff notes", edited: true });
+  expect((await getHospital("ucla"))!.intakeNotes).toBe("staff notes");
+  await saveHospital(ucla);
+});
+
 test("staff can add a facility; its numbers match inbound calls and faxes", async () => {
   const keck = (await getHospital("keck"))!;
   await saveHospital({ ...keck, id: "huntington", name: "Huntington Hospital", transferPhone: "+16263975000", transferFax: null, workflow: [{ type: "call", note: "", number: "+16265550199" }] });

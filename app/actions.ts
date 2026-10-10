@@ -197,6 +197,7 @@ export async function saveFacility(id: string | null, f: FormData) {
     capabilities: f.getAll("capabilities").map(String).filter((c): c is Capability => c in CAPABILITIES),
     workflow,
     formUrls: lines(str(f, "formUrls")),
+    edited: true,
   };
   if (!id && (await getHospital(h.id))) throw new Error(`A facility called "${h.name}" already exists.`);
   await saveHospital(h);
