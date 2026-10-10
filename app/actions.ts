@@ -12,7 +12,7 @@ import { CAPABILITIES, deleteHospital, getHospital, saveHospital, type Capabilit
 import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
 import { saveForm, type FieldValue, type FormField } from "@/lib/forms";
 import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/filled";
-import { downloadForms, fillOpenTransfersFor, processForm, queueFill, queueFormsForTransfer, runFills } from "@/lib/agent";
+import { applyTo, downloadForms, fillOpenTransfersFor, processForm, queueFill, recordOutcome, runFills } from "@/lib/agent";
 import { buildPacket, sendFax } from "@/lib/fax";
 import { startCall } from "@/lib/voice";
 
@@ -63,15 +63,14 @@ export async function runRanking(transferId: number) {
   redirect("/");
 }
 
-export async function chooseHospital(transferId: number, hospitalId: string) {
-  const hospital = (await getHospital(hospitalId))!;
-  await updateTransfer(transferId, { hospitalId, workflow: hospital.workflow }); // the transfer now follows this facility's workflow
-  await audit("user", "transfer.choose", transferId, hospitalId);
-  const queued = await queueFormsForTransfer(transferId); // forms agent fills everything on file for this hospital
-  after(async () => {
-    await runFills(queued);
-    await Promise.all((await downloadForms(hospitalId)).map(processForm)); // its public forms not on file yet
-  });
+// The nurse's hospitals, in the order to apply to them. The transfer starts with the first;
+// when one declines, it moves on to the next.
+export async function chooseHospitals(transferId: number, f: FormData) {
+  const choices = f.getAll("hospital").map(String);
+  if (!choices.length) throw new Error("Pick at least one hospital.");
+  await updateTransfer(transferId, { choices, status: "open" });
+  await audit("user", "transfer.choose", transferId, choices.join(", "));
+  after(await applyTo(transferId, choices[0]));
   redirect(`/transfers/${transferId}?step=w0`);
 }
 
@@ -85,8 +84,12 @@ export async function toggleStep(transferId: number, index: number) {
 }
 
 export async function setOutcome(transferId: number, f: FormData) {
-  await updateTransfer(transferId, { status: str(f, "status") as Transfer["status"], outcomeReason: str(f, "reason") });
   await audit("user", "transfer.outcome", transferId, str(f, "status"));
+  const next = await recordOutcome(transferId, str(f, "status") as Transfer["status"], str(f, "reason"), "user");
+  if (next) {
+    after(next);
+    redirect(`/transfers/${transferId}?step=w0`); // on to the next hospital's workflow
+  }
   revalidatePath(`/transfers/${transferId}`);
 }
 

@@ -24,8 +24,10 @@ export async function workflowOf(t: Transfer): Promise<WorkflowStep[]> {
 export async function progress(t: Transfer) {
   const workflow = await workflowOf(t);
   const filled = await listFilled(t.id);
-  const calls = await all<{ direction: string }>("SELECT direction FROM calls WHERE transfer_id = $1 AND status = 'completed'", [t.id]);
-  const faxes = (await all("SELECT 1 FROM faxes WHERE transfer_id = $1", [t.id])).length;
+  // Only calls and faxes since the current hospital was chosen count (earlier ones were for hospitals that declined).
+  const since = t.hospitalSince ?? "";
+  const calls = await all<{ direction: string }>("SELECT direction FROM calls WHERE transfer_id = $1 AND status = 'completed' AND created_at >= $2", [t.id, since]);
+  const faxes = (await all("SELECT 1 FROM faxes WHERE transfer_id = $1 AND created_at >= $2", [t.id, since])).length;
 
   // Each finished call or fax completes the next step of its kind, in order.
   const used = { call: 0, wait_for_call: 0, send_fax: 0 };
@@ -55,7 +57,8 @@ export async function progress(t: Transfer) {
 const LABELS: Record<string, string> = {
   "transfer.create": "Chart pulled from Epic",
   "transfer.rank": "AI ranked the receiving hospitals",
-  "transfer.choose": "Receiving hospital chosen",
+  "transfer.choose": "Hospitals chosen, in order",
+  "transfer.next": "Moved on to the next hospital",
   "form.fill": "AI filled a transfer form",
   "form.fill.failed": "AI could not fill a form",
   "form.edit": "Form edited by staff",
@@ -83,6 +86,6 @@ export async function activity(transferId: number): Promise<Activity[]> {
       at: r.at,
       ai: r.actor.startsWith("ai"),
       text: LABELS[r.action],
-      detail: r.action === "transfer.choose" ? names[r.detail ?? ""] ?? r.detail : r.action === "form.fill" ? r.detail?.split(": ")[1] ?? null : null,
+      detail: ["transfer.choose", "transfer.next"].includes(r.action) ? (r.detail ?? "").split(", ").map((id) => names[id] ?? id).join(" → ") : r.action === "form.fill" ? r.detail?.split(": ")[1] ?? null : null,
     }));
 }

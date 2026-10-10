@@ -1,6 +1,8 @@
+import { after } from "next/server";
+import { recordOutcome } from "@/lib/agent";
 import { audit, run } from "@/lib/db";
 import { matchHospitalByPhone } from "@/lib/hospitals";
-import { getTransfer, listTransfers, updateTransfer } from "@/lib/transfers";
+import { getTransfer, listTransfers } from "@/lib/transfers";
 import { addLine, answer, getTranscript, isFromTwilio, openingLine, speakAndHangUp, speakAndListen } from "@/lib/voice";
 
 // AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
@@ -73,8 +75,9 @@ export async function POST(req: Request) {
   const reply = await answer(t, history, heard);
 
   if (reply.outcome !== "none") {
-    await updateTransfer(transferId, { status: reply.outcome, outcomeReason: reply.outcomeReason });
     await audit("ai-voice", `transfer.${reply.outcome}`, transferId);
+    const next = await recordOutcome(transferId, reply.outcome, reply.outcomeReason, "ai-voice"); // declined: on to the nurse's next hospital
+    if (next) after(next);
   }
   if (reply.say) await addLine(callSid, "ai", reply.say);
   if (reply.endCall) return hangUp(reply.say || "Thank you. Goodbye.");

@@ -55,6 +55,8 @@ const transfer: Transfer = {
   rankingStatus: null,
   rankingError: null,
   hospitalId: "keck",
+  hospitalSince: null,
+  choices: [],
   workflow: null,
   skipped: [],
   status: "open",

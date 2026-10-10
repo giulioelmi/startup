@@ -1,4 +1,4 @@
-import { all, one, run } from "./db";
+import { all, NOW, one, run } from "./db";
 import type { ClinicalSummary } from "./summary";
 import type { Ranking } from "./ranking";
 import type { WorkflowStep } from "./workflow";
@@ -24,7 +24,9 @@ export type Transfer = {
   ranking: Ranking | null;
   rankingStatus: "running" | "failed" | null; // the AI ranks hospitals in the background
   rankingError: string | null;
-  hospitalId: string | null;
+  hospitalId: string | null; // the hospital being applied to now
+  hospitalSince: string | null; // calls and faxes before this belong to earlier hospitals
+  choices: string[]; // the nurse's hospitals, in the order to apply to them
   workflow: WorkflowStep[] | null; // the chosen facility's workflow, copied when it was chosen
   skipped: number[]; // workflow steps staff marked as done/skipped
   status: "open" | "accepted" | "declined" | "cancelled";
@@ -45,6 +47,8 @@ function parse(row: any): Transfer {
     rankingStatus: row.ranking_status,
     rankingError: row.ranking_error,
     hospitalId: row.hospital_id,
+    hospitalSince: row.hospital_since,
+    choices: JSON.parse(row.choices ?? "[]"),
     workflow: row.workflow ? JSON.parse(row.workflow) : null,
     skipped: JSON.parse(row.skipped ?? "[]"),
     status: row.status,
@@ -72,10 +76,11 @@ export async function createTransfer(t: Pick<Transfer, "patientId" | "patientNam
 
 export async function updateTransfer(
   id: number,
-  fields: { ranking?: Ranking; hospitalId?: string; workflow?: WorkflowStep[]; skipped?: number[]; status?: Transfer["status"]; outcomeReason?: string },
+  fields: { ranking?: Ranking; hospitalId?: string; choices?: string[]; workflow?: WorkflowStep[]; skipped?: number[]; status?: Transfer["status"]; outcomeReason?: string },
 ) {
   if (fields.ranking) await run("UPDATE transfers SET ranking = $1 WHERE id = $2", [JSON.stringify(fields.ranking), id]);
-  if (fields.hospitalId) await run("UPDATE transfers SET hospital_id = $1 WHERE id = $2", [fields.hospitalId, id]);
+  if (fields.hospitalId) await run(`UPDATE transfers SET hospital_id = $1, hospital_since = ${NOW} WHERE id = $2`, [fields.hospitalId, id]);
+  if (fields.choices) await run("UPDATE transfers SET choices = $1 WHERE id = $2", [JSON.stringify(fields.choices), id]);
   if (fields.workflow) await run("UPDATE transfers SET workflow = $1, skipped = '[]' WHERE id = $2", [JSON.stringify(fields.workflow), id]);
   if (fields.skipped) await run("UPDATE transfers SET skipped = $1 WHERE id = $2", [JSON.stringify(fields.skipped), id]);
   if (fields.status) await run("UPDATE transfers SET status = $1, outcome_reason = $2 WHERE id = $3", [fields.status, fields.outcomeReason ?? null, id]);

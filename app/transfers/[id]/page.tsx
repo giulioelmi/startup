@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { callTransferCenter, chooseHospital, faxPacket, refillForm, runRanking, saveFilled, setOutcome, toggleStep } from "@/app/actions";
+import { callTransferCenter, chooseHospitals, faxPacket, refillForm, runRanking, saveFilled, setOutcome, toggleStep } from "@/app/actions";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { HospitalPicker } from "@/components/HospitalPicker";
 import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
@@ -205,26 +206,23 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
           <p className="mt-2">{t.ranking.needsExplanation}</p>
         </div>
       )}
-      <div className="space-y-3">
-        {t.ranking.hospitals.map((r, i) => {
+      <HospitalPicker
+        action={chooseHospitals.bind(null, t.id)}
+        initial={t.choices.length ? t.choices : t.hospitalId ? [t.hospitalId] : []}
+        items={t.ranking.hospitals.flatMap((r, i) => {
           const h = hospitals.find((x) => x.id === r.hospitalId);
-          if (!h) return null; // facility deleted since the ranking
-          const chosen = t.hospitalId === h.id;
-          return (
-            <div key={h.id} className={`rounded-lg border p-3 ${chosen ? "border-teal-600 bg-teal-50/50 ring-1 ring-teal-600" : "border-slate-200"}`}>
-              <div className="flex items-start justify-between gap-3">
-                <Link href={href("hospital", h.id)} className="font-semibold text-slate-900 hover:text-teal-700">
-                  {i + 1}. {h.name}
-                </Link>
-                {chosen ? (
-                  <Pill tone="green">Chosen</Pill>
-                ) : (
-                  <form action={chooseHospital.bind(null, t.id, h.id)}>
-                    <SubmitButton className="btn-light" busy="…">Choose</SubmitButton>
-                  </form>
-                )}
-              </div>
+          if (!h) return []; // facility deleted since the ranking
+          const at = t.choices.indexOf(h.id);
+          const now = t.choices.indexOf(t.hospitalId ?? "");
+          const card = (
+            <>
+              <p className="font-semibold text-slate-900">
+                {noAI ? "" : `AI #${i + 1} · `}{h.name}{" "}
+                <Link href={href("hospital", h.id)} className="text-sm font-medium text-teal-700 hover:underline">Details</Link>
+              </p>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                {h.id === t.hospitalId && <Pill tone="green">{t.status === "open" ? "Applying now" : t.status}</Pill>}
+                {at >= 0 && at < now && <Pill tone="red">Declined</Pill>}
                 {r.distanceMiles != null && <Pill>{r.distanceMiles} mi</Pill>}
                 {noAI ? null : r.eligible ? (
                   <Pill tone="green">All needed services</Pill>
@@ -232,11 +230,12 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
                   <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>
                 )}
               </div>
-              <p className="mt-2 text-sm text-slate-600">{r.rationale}</p>
-            </div>
+              {r.rationale && <p className="mt-2 text-sm text-slate-600">{r.rationale}</p>}
+            </>
           );
+          return [{ id: h.id, card }];
         })}
-      </div>
+      />
     </>
   );
 }
@@ -420,9 +419,13 @@ function FaxStep({ t, ws, here, workflow, hospital, filled, faxes, href }: { t: 
 }
 
 function OutcomeStep({ t, n }: { t: Transfer; n: number }) {
+  const left = t.choices.length - 1 - t.choices.indexOf(t.hospitalId ?? "");
   return (
     <>
       <StepTitle n={n} title="Outcome">Set automatically when the transfer center accepts or declines on the call; you can also record it here.</StepTitle>
+      {left > 0 && t.status === "open" && (
+        <p className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">If they decline, the app moves on to the next hospital on your list ({left} left).</p>
+      )}
       <form action={setOutcome.bind(null, t.id)} className="space-y-3">
         <select name="status" defaultValue={t.status} className="input">
           <option value="open">Open</option>

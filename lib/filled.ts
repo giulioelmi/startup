@@ -31,7 +31,8 @@ const parse = (r: any): Filled => ({
 const SELECT = "SELECT ff.*, f.name, f.fields FROM filled_forms ff JOIN forms f ON f.id = ff.form_id";
 
 export async function listFilled(transferId: number): Promise<Filled[]> {
-  return (await all(`${SELECT} WHERE ff.transfer_id = $1 ORDER BY ff.id`, [transferId])).map(parse);
+  // Only the forms of the hospital being applied to now.
+  return (await all(`${SELECT} WHERE ff.transfer_id = $1 AND f.hospital_id = (SELECT hospital_id FROM transfers WHERE id = $1) ORDER BY ff.id`, [transferId])).map(parse);
 }
 
 export async function getFilled(id: number): Promise<Filled | null> {

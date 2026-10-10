@@ -1,7 +1,7 @@
 import { all, audit, one, run } from "./db";
 import { fillValues, getForm, readForm, saveForm, type FormField } from "./forms";
 import { getHospital } from "./hospitals";
-import { getTransfer, listTransfers } from "./transfers";
+import { getTransfer, listTransfers, updateTransfer, type Transfer } from "./transfers";
 
 // The forms agent. Nobody fills forms by hand:
 //   form arrives (upload / email / fax) -> AI reads it and finds every blank
@@ -99,4 +99,29 @@ export async function downloadForms(hospitalId: string): Promise<number[]> {
     }
   }
   return ids;
+}
+
+// Start applying to a hospital: the transfer follows its workflow and the agent fills its forms.
+// Returns the slow part (filling, downloading the hospital's public forms) to run in the background.
+export async function applyTo(transferId: number, hospitalId: string) {
+  const hospital = (await getHospital(hospitalId))!;
+  await updateTransfer(transferId, { hospitalId, workflow: hospital.workflow }); // copied: later edits don't change a running transfer
+  const queued = await queueFormsForTransfer(transferId);
+  return async () => {
+    await runFills(queued);
+    await Promise.all((await downloadForms(hospitalId)).map(processForm));
+  };
+}
+
+// A hospital answered. If it declined and the nurse picked more hospitals, move on to the next one;
+// otherwise the transfer is closed with this outcome. Returns background work when it moved on.
+export async function recordOutcome(transferId: number, status: Transfer["status"], reason: string, actor: string) {
+  const t = (await getTransfer(transferId))!;
+  const next = status === "declined" && t.hospitalId ? t.choices[t.choices.indexOf(t.hospitalId) + 1] : undefined;
+  if (!next) {
+    await updateTransfer(transferId, { status, outcomeReason: reason });
+    return null;
+  }
+  await audit(actor, "transfer.next", transferId, next);
+  return applyTo(transferId, next);
 }

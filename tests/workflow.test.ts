@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { downloadForms } from "@/lib/agent";
+import { applyTo, downloadForms, recordOutcome } from "@/lib/agent";
 import { audit, run } from "@/lib/db";
 import { listForms } from "@/lib/forms";
 import { deleteHospital, getHospital, HOSPITALS, listHospitals, matchHospitalByPhone, saveHospital } from "@/lib/hospitals";
@@ -55,6 +55,21 @@ test("a transfer follows its facility's workflow: calls, faxes and skips complet
   await updateTransfer(id, { skipped: [0] }); // no forms needed this time
   expect(await steps()).toEqual(["Chart:done", "Hospital:done", "Forms:done", "Fax:done", "Call:done", "Their call:todo", "Outcome:todo"]);
   expect((await progress((await getTransfer(id))!)).next).toBe("w3");
+});
+
+test("the nurse's hospitals are applied to in order: a decline moves on to the next, the last one closes the transfer", async () => {
+  const id = await createTransfer({ patientId: "eTest123", patientName: "Camila Maria Lopez", reason: "NSTEMI", details: defaultDetails(), summary: summarize(record) });
+  await updateTransfer(id, { choices: ["keck", "ucla"] });
+  await applyTo(id, "keck");
+  await run("INSERT INTO faxes (transfer_id, to_number, provider, status, pdf, created_at) VALUES ($1, '+13234425240', 'mock', 'sent', $2, '2000-01-01 00:00:00')", [id, Buffer.from("")]);
+
+  expect(await recordOutcome(id, "declined", "No ICU beds", "ai-voice")).toBeTypeOf("function");
+  const t = (await getTransfer(id))!;
+  expect(t).toMatchObject({ hospitalId: "ucla", status: "open", workflow: (await getHospital("ucla"))!.workflow });
+  expect((await progress(t)).steps.every((s) => s.done === ["Chart", "Hospital"].includes(s.title))).toBe(true); // Keck's fax doesn't count for UCLA
+
+  expect(await recordOutcome(id, "declined", "No neurosurgery", "user")).toBeNull();
+  expect(await getTransfer(id)).toMatchObject({ hospitalId: "ucla", status: "declined", outcomeReason: "No neurosurgery" });
 });
 
 test("a facility's public forms are downloaded once into the forms inbox", async () => {

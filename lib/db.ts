@@ -79,6 +79,9 @@ const SCHEMA = [
   // and the workflow steps staff marked as done or skipped.
   `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS workflow TEXT`,
   `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS skipped TEXT NOT NULL DEFAULT '[]'`,
+  // The nurse's hospitals in the order to apply to them; hospital_id is the one being applied to now, since hospital_since.
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS choices TEXT NOT NULL DEFAULT '[]'`,
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS hospital_since TEXT`,
   `CREATE TABLE IF NOT EXISTS audit (
     id SERIAL PRIMARY KEY,
     at TEXT NOT NULL DEFAULT ${NOW},
