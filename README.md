@@ -4,7 +4,7 @@ AI assistant for small community hospitals that need to transfer patients to a h
 It reads the patient's chart from the EHR, picks the best receiving hospital, fills that hospital's
 transfer forms, **calls the transfer center and answers its questions**, and faxes the packet.
 
-Prototype scope: Epic FHIR **sandbox** patients only; receiving hospitals **UCLA Health, Keck Medicine of USC, Cedars-Sinai**.
+Prototype scope: Epic FHIR **sandbox** patients only; receiving hospitals **UCLA Health, Keck Medicine of USC, Cedars-Sinai, UC San Diego Health, UCI Health, Loma Linda, Sharp Memorial, Children's Hospital LA**.
 
 ## What works
 
@@ -85,7 +85,7 @@ Before the demo: upload one form per hospital in **Forms inbox** (a real PDF, or
 ```
 lib/epic.ts       Epic OAuth + FHIR fetch (swap URLs for Oracle Health/Cerner)
 lib/summary.ts    FHIR → compact chart summary (the only patient data the AI sees)
-lib/hospitals.ts  UCLA / Keck / Cedars profiles + capabilities
+lib/hospitals.ts  built-in hospital profiles + capabilities
 lib/ranking.ts    capability filter + distance + AI rationale
 lib/agent.ts      forms agent: read incoming forms, fill them for open transfers
 lib/forms.ts      find fields (PDF fields or AI vision on scans), AI fill, write PDF

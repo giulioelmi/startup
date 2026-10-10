@@ -154,16 +154,129 @@ export const HOSPITALS: Hospital[] = [
     ],
     formUrls: ["https://www.cedars-sinai.org/content/dam/cedars-sinai/programs-and-services/med-pros/Non-EMTALA-Request-for-Transfer-to-Cedars-Sinai-Inpatient.pdf"],
   },
+  {
+    id: "ucsd",
+    name: "UC San Diego Health (Hillcrest / Jacobs Medical Center)",
+    address: "200 W Arbor Dr, San Diego, CA 92103",
+    lat: 32.754,
+    lng: -117.166,
+    transferPhone: "+16195435709",
+    transferFax: "+16195438394",
+    transferEmail: "TxCtr@health.ucsd.edu",
+    emailDomains: ["health.ucsd.edu", "ucsd.edu"],
+    verified: false,
+    requiredInfo: ["Transfer Request Form", "Signed Transfer Notification and Agreement Form", "Diagnosis and reason for transfer", "Referring physician name and callback number"],
+    intakeNotes:
+      "24/7 transfer center run by a registered nurse with a UC San Diego Health physician; physician-to-physician transfers. Send the Transfer Request Form and signed Transfer Notification and Agreement Form by fax (619) 543-8394 or email TxCtr@health.ucsd.edu. Also gives stroke/ICH triage advice with real-time image review. Trauma and burn care are at Hillcrest; transplant and ECMO at Jacobs (La Jolla).",
+    capabilities: [...ALL_ADULT, "trauma_adult", "burn", "nicu", "high_risk_ob"],
+    workflow: [
+      { type: "call", note: "Physician-to-physician request with the transfer center." },
+      { type: "receive_forms", note: "Transfer Request Form and Transfer Notification and Agreement Form: upload them to the Forms inbox, or ask them to fax/email them." },
+      { type: "fill_forms", note: "" },
+      { type: "send_fax", note: "Or email them to TxCtr@health.ucsd.edu." },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: [],
+  },
+  {
+    id: "uci",
+    name: "UCI Medical Center (UCI Health)",
+    address: "101 The City Dr S, Orange, CA 92868",
+    lat: 33.788,
+    lng: -117.891,
+    transferPhone: "+17144562222",
+    transferFax: null,
+    transferEmail: null,
+    emailDomains: ["hs.uci.edu", "uci.edu"],
+    verified: false,
+    requiredInfo: ["History and physical (H&P)", "Diagnosis", "Reason for transfer", "Referring case manager name and contact number", "Referring physician name and contact number"],
+    intakeNotes:
+      "24/7 transfer center. Orange County's only Level I adult trauma center (Level II pediatric); regional burn center. Requests can also go through UCI's provider portal (e-intake form). Specialty lines: NICU (714) 456-5285, perinatal (714) 234-6430, behavioral health (714) 264-5464, acute rehab (714) 456-6923.",
+    capabilities: ["comprehensive_stroke", "trauma_adult", "interventional_cardiology", "cardiac_surgery", "ecmo", "lvad", "kidney_transplant", "neurosurgery", "neuro_icu", "cancer_center", "burn", "nicu", "high_risk_ob"],
+    workflow: [
+      { type: "call", note: "Have the H&P, diagnosis and reason for transfer ready. They say where to send records." },
+      { type: "send_fax", note: "Use the fax number they gave on the call." },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: [],
+  },
+  {
+    id: "lluh",
+    name: "Loma Linda University Medical Center",
+    address: "11234 Anderson St, Loma Linda, CA 92354",
+    lat: 34.05,
+    lng: -117.264,
+    transferPhone: "+18008655862",
+    transferFax: "+19095580288",
+    transferEmail: null,
+    emailDomains: ["llu.edu", "lluh.org"],
+    verified: false,
+    requiredInfo: ["Transfer Center Request Form", "Diagnosis and reason for transfer", "Referring physician name and callback number"],
+    intakeNotes:
+      "24/7 transfer center for the Medical Center, Children's Hospital, Surgical Hospital and East Campus. Call (800) 865-5862, option 3. Fax the request form to (909) 558-0288 (email subject must include \"Secure\"). Level I adult and pediatric trauma; children's hospital.",
+    capabilities: ["comprehensive_stroke", "trauma_adult", "trauma_peds", "interventional_cardiology", "cardiac_surgery", "ecmo", "lvad", "heart_transplant", "liver_transplant", "kidney_transplant", "neurosurgery", "neuro_icu", "picu", "nicu", "high_risk_ob"],
+    workflow: [
+      { type: "call", note: "Option 3 for the transfer center." },
+      { type: "fill_forms", note: "Transfer Center Request Form." },
+      { type: "send_fax", note: "" },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: ["https://lluh.org/sites/lluh.org/files/2023-07/LLUMC-TC-Request-Form.pdf"],
+  },
+  {
+    id: "sharp",
+    name: "Sharp Memorial Hospital",
+    address: "7901 Frost St, San Diego, CA 92123",
+    lat: 32.799,
+    lng: -117.155,
+    transferPhone: "+18559955005",
+    transferFax: null,
+    transferEmail: null,
+    emailDomains: ["sharp.com"],
+    verified: false,
+    requiredInfo: ["Patient name and date of birth", "Diagnosis and reason for transfer", "Requested service and level of care", "Referring physician or case manager name and callback number"],
+    intakeNotes:
+      "24/7 Sharp Transfer Center (also covers Sharp Grossmont, Chula Vista and Coronado). The request must come from a case manager or physician. Backup line if the main one is down: (858) 268-4002.",
+    capabilities: ["comprehensive_stroke", "interventional_cardiology", "cardiac_surgery", "ecmo", "lvad", "heart_transplant", "kidney_transplant", "neurosurgery", "neuro_icu"],
+    workflow: [
+      { type: "call", note: "Physician or case manager calls with the patient's details." },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: [],
+  },
+  {
+    id: "chla",
+    name: "Children's Hospital Los Angeles",
+    address: "4650 Sunset Blvd, Los Angeles, CA 90027",
+    lat: 34.098,
+    lng: -118.29,
+    transferPhone: "+18886312452",
+    transferFax: null,
+    transferEmail: null,
+    emailDomains: ["chla.usc.edu", "chla.org"],
+    verified: false,
+    requiredInfo: ["Patient name and date of birth", "Diagnosis and reason for transfer", "Requested service and level of care", "Referring physician name and callback number"],
+    intakeNotes:
+      "PEDIATRIC ONLY. 24/7 Access and Transfer Center; option 2 for admitting, ED, NICU and PICU transfers. Level I pediatric trauma. CHLA Emergency Transport team: (323) 361-4507.",
+    capabilities: ["trauma_peds", "cardiac_surgery", "ecmo", "heart_transplant", "liver_transplant", "kidney_transplant", "neurosurgery", "picu", "nicu"],
+    workflow: [
+      { type: "call", note: "Option 2 for admitting, ED, NICU and PICU transfers." },
+      { type: "wait_for_call", note: "Accept/decline comes back by phone." },
+    ],
+    formUrls: [],
+  },
 ];
 
 // ---------- Database ----------
 
 export async function listHospitals(): Promise<Hospital[]> {
   let saved = (await all<{ data: string }>("SELECT data FROM facilities")).map((r) => JSON.parse(r.data) as Hospital);
-  // First run: add the built-in ones. After that, keep them up to date unless staff edited or deleted them.
+  // Add the built-in ones and keep them up to date, unless staff edited or deleted them.
+  const missing = HOSPITALS.filter((b) => !saved.some((h) => h.id === b.id));
+  const deleted = missing.length ? (await all<{ detail: string }>("SELECT detail FROM audit WHERE action = 'facility.delete'")).map((r) => r.detail) : [];
   const stale = HOSPITALS.filter((b) => {
     const h = saved.find((x) => x.id === b.id);
-    return h ? !h.edited && JSON.stringify(h) !== JSON.stringify(b) : !saved.length;
+    return h ? !h.edited && JSON.stringify(h) !== JSON.stringify(b) : !deleted.includes(b.id);
   });
   if (stale.length) {
     for (const h of stale) await saveHospital(h);

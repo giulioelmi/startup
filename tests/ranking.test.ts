@@ -9,13 +9,15 @@ const pomona = { lat: 34.0551, lng: -117.7523 }; // a community hospital east of
 
 test("hospitals missing a needed service rank last", () => {
   const r = rank(["trauma_peds"], HOSPITALS, pomona);
-  expect(r.at(-1)).toMatchObject({ hospitalId: "keck", eligible: false, missing: ["trauma_peds"] });
+  expect(r.find((x) => x.hospitalId === "keck")).toMatchObject({ eligible: false, missing: ["trauma_peds"] });
+  expect(r.findLastIndex((x) => x.eligible)).toBeLessThan(r.findIndex((x) => !x.eligible));
 });
 
 test("among eligible hospitals, the closest comes first", () => {
   const r = rank(["comprehensive_stroke"], HOSPITALS, pomona);
-  expect(r.map((x) => x.hospitalId)).toEqual(["keck", "cedars", "ucla"]);
-  expect(r.every((x) => x.eligible)).toBe(true);
+  const eligible = r.filter((x) => x.eligible);
+  expect(eligible.length).toBeGreaterThan(3);
+  expect(eligible.map((x) => x.distanceMiles)).toEqual(eligible.map((x) => x.distanceMiles).sort((a, b) => a! - b!));
 });
 
 test("distance is roughly right", () => {

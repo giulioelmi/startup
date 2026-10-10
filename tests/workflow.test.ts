@@ -1,9 +1,9 @@
 import { expect, test, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
 import { downloadForms } from "@/lib/agent";
-import { run } from "@/lib/db";
+import { audit, run } from "@/lib/db";
 import { listForms } from "@/lib/forms";
-import { getHospital, listHospitals, matchHospitalByPhone, saveHospital } from "@/lib/hospitals";
+import { deleteHospital, getHospital, HOSPITALS, listHospitals, matchHospitalByPhone, saveHospital } from "@/lib/hospitals";
 import { progress } from "@/lib/progress";
 import { summarize } from "@/lib/summary";
 import { createTransfer, defaultDetails, getTransfer, updateTransfer } from "@/lib/transfers";
@@ -13,7 +13,7 @@ vi.mock("@/lib/llm", () => ({ askForObject: vi.fn() }));
 
 test("the built-in facilities are added on first use, each with a workflow", async () => {
   const hospitals = await listHospitals();
-  expect(hospitals.map((h) => h.id).sort()).toEqual(["cedars", "keck", "ucla"]);
+  expect(hospitals.map((h) => h.id).sort()).toEqual(HOSPITALS.map((h) => h.id).sort());
   expect(hospitals.every((h) => h.workflow.length > 0)).toBe(true);
 });
 
@@ -24,6 +24,14 @@ test("built-in facilities get our updates unless staff edited them", async () =>
   await saveHospital({ ...ucla, intakeNotes: "staff notes", edited: true });
   expect((await getHospital("ucla"))!.intakeNotes).toBe("staff notes");
   await saveHospital(ucla);
+});
+
+test("a built-in facility that staff deleted is not added back", async () => {
+  const sharp = (await getHospital("sharp"))!;
+  await deleteHospital("sharp");
+  await audit("user", "facility.delete", null, "sharp");
+  expect(await getHospital("sharp")).toBeUndefined();
+  await saveHospital(sharp);
 });
 
 test("staff can add a facility; its numbers match inbound calls and faxes", async () => {
