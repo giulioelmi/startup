@@ -51,7 +51,7 @@ export async function rankHospitals(summary: ClinicalSummary, reason: string): P
   } catch (e) {
     console.error("AI ranking failed:", (e as Error).message);
     const ranked = rank([], hospitals, sendingLocation()).map((r) => ({ ...r, rationale: "" }));
-    return { ai: false, needs: [], needsExplanation: "The AI is unavailable right now, so hospitals are ordered by distance only. Check the services the patient needs, or re-run the AI.", hospitals: ranked };
+    return { ai: false, needs: [], needsExplanation: `The AI could not rank the hospitals (${(e as Error).message}), so they are ordered by distance only. Pick any hospital, or re-run the AI.`, hospitals: ranked };
   }
 }
 
