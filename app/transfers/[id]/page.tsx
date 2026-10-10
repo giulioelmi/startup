@@ -6,7 +6,7 @@ import { AutoRefresh } from "@/components/AutoRefresh";
 import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
-import { Pill, STATUS_TONE, Stepper } from "@/components/ui";
+import { Pill, Spinner, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
@@ -44,7 +44,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 ORDER BY id DESC", [id]);
   const faxes = await all<FaxRow>("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = $1 ORDER BY id DESC", [id]);
   const events = await activity(id);
-  const busy = filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
+  const busy = t.rankingStatus === "running" || filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
   const p = t.summary.patient;
   const href = (s: string, doc?: string | number) => `/transfers/${id}?step=${s}${doc != null ? `&doc=${doc}` : ""}`;
 
@@ -168,12 +168,20 @@ function ChartStep({ t }: { t: Transfer }) {
 }
 
 function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital[]; href: Href }) {
+  if (t.rankingStatus === "running")
+    return (
+      <>
+        <StepTitle n={2} title="Choose the receiving hospital" />
+        <p className="flex items-center gap-2 text-sm text-slate-600"><Spinner /> The AI is reviewing the chart and ranking hospitals…</p>
+      </>
+    );
   if (!t.ranking)
     return (
       <>
-        <StepTitle n={2} title="Choose the receiving hospital">The hospitals have not been ranked yet.</StepTitle>
+        <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
+        {t.rankingError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">AI error: {t.rankingError}</p>}
         <form action={runRanking.bind(null, t.id)}>
-          <SubmitButton busy="AI is reviewing the chart…">Rank hospitals</SubmitButton>
+          <SubmitButton busy="Starting…">Rank hospitals with AI</SubmitButton>
         </form>
       </>
     );

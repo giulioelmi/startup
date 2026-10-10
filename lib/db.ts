@@ -38,6 +38,8 @@ const SCHEMA = [
     outcome_reason TEXT,
     created_at TEXT NOT NULL DEFAULT ${NOW}
   )`,
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS ranking_status TEXT`, // running | failed (null when idle)
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS ranking_error TEXT`,
   `CREATE TABLE IF NOT EXISTS filled_forms (
     id SERIAL PRIMARY KEY,
     transfer_id INTEGER NOT NULL,

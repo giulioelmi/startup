@@ -20,6 +20,10 @@ export function Pill({ tone = "gray", children, pulse }: { tone?: keyof typeof T
   );
 }
 
+export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
+  return <span className={`inline-block animate-spin rounded-full border-2 border-current border-t-transparent ${className}`} />;
+}
+
 export const STATUS_TONE = { open: "blue", accepted: "green", declined: "red", cancelled: "gray" } as const;
 
 export type Step = { id: string; title: string; done: boolean };

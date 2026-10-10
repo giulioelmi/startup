@@ -22,6 +22,8 @@ export type Transfer = {
   details: TransferDetails;
   summary: ClinicalSummary;
   ranking: Ranking | null;
+  rankingStatus: "running" | "failed" | null; // the AI ranks hospitals in the background
+  rankingError: string | null;
   hospitalId: string | null;
   workflow: WorkflowStep[] | null; // the chosen facility's workflow, copied when it was chosen
   skipped: number[]; // workflow steps staff marked as done/skipped
@@ -40,6 +42,8 @@ function parse(row: any): Transfer {
     details: JSON.parse(row.details),
     summary: JSON.parse(row.summary),
     ranking: row.ranking ? JSON.parse(row.ranking) : null,
+    rankingStatus: row.ranking_status,
+    rankingError: row.ranking_error,
     hospitalId: row.hospital_id,
     workflow: row.workflow ? JSON.parse(row.workflow) : null,
     skipped: JSON.parse(row.skipped ?? "[]"),
@@ -75,6 +79,10 @@ export async function updateTransfer(
   if (fields.workflow) await run("UPDATE transfers SET workflow = $1, skipped = '[]' WHERE id = $2", [JSON.stringify(fields.workflow), id]);
   if (fields.skipped) await run("UPDATE transfers SET skipped = $1 WHERE id = $2", [JSON.stringify(fields.skipped), id]);
   if (fields.status) await run("UPDATE transfers SET status = $1, outcome_reason = $2 WHERE id = $3", [fields.status, fields.outcomeReason ?? null, id]);
+}
+
+export async function setRankingStatus(id: number, status: Transfer["rankingStatus"], error: string | null = null) {
+  await run("UPDATE transfers SET ranking_status = $1, ranking_error = $2 WHERE id = $3", [status, error, id]);
 }
 
 // Default "sending side" details come from env so staff don't retype them.

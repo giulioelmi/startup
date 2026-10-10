@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { audit, one, run } from "@/lib/db";
 import { getPatientRecord } from "@/lib/epic";
 import { summarize } from "@/lib/summary";
-import { createTransfer, getTransfer, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
+import { createTransfer, getTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
 import { CAPABILITIES, deleteHospital, getHospital, saveHospital, type Capability, type Hospital } from "@/lib/hospitals";
 import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
@@ -36,19 +36,31 @@ export async function startTransfer(f: FormData) {
   };
   const id = await createTransfer({ patientId, patientName: summary.patient.name, reason: str(f, "reason"), details, summary });
   await audit("user", "transfer.create", id, "chart snapshot from Epic");
-  await rank(id).catch(() => {}); // on failure the page offers a retry
-  redirect(`/transfers/${id}?step=hospital`);
+  await startRanking(id);
+  redirect("/");
+}
+
+// Ranking runs in the background; the nurse goes back to the list, which shows a loader on this case.
+async function startRanking(transferId: number) {
+  await setRankingStatus(transferId, "running");
+  after(() => rank(transferId));
 }
 
 async function rank(transferId: number) {
-  const t = (await getTransfer(transferId))!;
-  await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
-  await audit("ai", "transfer.rank", transferId);
+  try {
+    const t = (await getTransfer(transferId))!;
+    await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
+    await setRankingStatus(transferId, null);
+    await audit("ai", "transfer.rank", transferId);
+  } catch (e) {
+    console.error(e);
+    await setRankingStatus(transferId, "failed", String((e as Error).message ?? e).slice(0, 500)); // the page shows it and offers a retry
+  }
 }
 
 export async function runRanking(transferId: number) {
-  await rank(transferId);
-  revalidatePath(`/transfers/${transferId}`);
+  await startRanking(transferId);
+  redirect("/");
 }
 
 export async function chooseHospital(transferId: number, hospitalId: string) {

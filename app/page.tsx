@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { MiniProgress, Pill, STATUS_TONE } from "@/components/ui";
+import { AutoRefresh } from "@/components/AutoRefresh";
+import { MiniProgress, Pill, Spinner, STATUS_TONE } from "@/components/ui";
 import { one } from "@/lib/db";
 import { listHospitals } from "@/lib/hospitals";
 import { progress } from "@/lib/progress";
@@ -21,6 +22,7 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-8">
+      {transfers.some((t) => t.rankingStatus === "running") && <AutoRefresh seconds={2} />}
       <div className="flex items-end justify-between">
         <div>
           <p className="eyebrow">Transfer center</p>
@@ -63,7 +65,15 @@ export default async function Dashboard() {
                     <p className="text-xs text-slate-500">#{t.id} · {t.createdAt.slice(0, 16)}</p>
                   </td>
                   <td className="max-w-xs truncate pr-4">{t.reason}</td>
-                  <td>{hospitals.find((h) => h.id === t.hospitalId)?.name.split(" (")[0] ?? <span className="text-slate-400">Not chosen</span>}</td>
+                  <td>
+                    {t.rankingStatus === "running" ? (
+                      <span className="flex items-center gap-2 text-teal-700"><Spinner /> AI ranking hospitals…</span>
+                    ) : t.rankingStatus === "failed" ? (
+                      <Link href={`/transfers/${t.id}?step=hospital`}><Pill tone="red">Ranking failed</Pill></Link>
+                    ) : (
+                      hospitals.find((h) => h.id === t.hospitalId)?.name.split(" (")[0] ?? <span className="text-slate-400">Not chosen</span>
+                    )}
+                  </td>
                   <td><MiniProgress steps={progresses.get(t.id)!} /></td>
                   <td><Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill></td>
                 </tr>
