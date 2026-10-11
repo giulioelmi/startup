@@ -1,6 +1,6 @@
 import { decodeJwt, decodeProtectedHeader } from "jose";
 import { createPrivateKey } from "node:crypto";
-import { buildAssertion, epicConfig, requestToken } from "@/lib/epic";
+import { buildAssertion, epicConfig, getPatientRecord, QUERIES, requestToken } from "@/lib/epic";
 
 // Epic connection check: shows what the server sends to Epic and what Epic answers.
 // Never shows the private key or the raw signed token.
@@ -52,6 +52,16 @@ async function runCheck(): Promise<Row[]> {
       });
       const body = await res.json().catch(() => ({}));
       add("Test patient (Camila Lopez)", res.ok ? `HTTP 200: ${body.name?.[0]?.text ?? "loaded"}` : `HTTP ${res.status}`, res.ok);
+
+      // What the app pulls for a transfer: how many of each, or why Epic refused.
+      if (res.ok) {
+        const record = await getPatientRecord("erXuFYUfucBZaryVksYEcMg3");
+        for (const key of Object.keys(QUERIES)) {
+          const failed = record.missing.find((m) => m.startsWith(`${key} `));
+          const n = record.resources[key].length;
+          add(`  ${key}`, failed ? `failed: HTTP ${failed.split("(")[1].replace(")", "")}` : `${n} returned`, failed ? false : n > 0 ? true : null);
+        }
+      }
     }
   }
   return rows;

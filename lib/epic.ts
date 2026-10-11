@@ -90,10 +90,11 @@ export async function searchPatients(params: { family?: string; given?: string; 
 }
 
 // Everything we need for a transfer, in one object. A resource type the app
-// isn't authorized for (or that errors) comes back empty and is listed in `missing`.
+// isn't authorized for (or that errors) comes back empty and is listed in `missing`
+// with Epic's HTTP status: 403 usually means that API isn't enabled for the app on fhir.epic.com.
 export type PatientRecord = { patient: FhirResource; resources: Record<string, FhirResource[]>; missing: string[] };
 
-const QUERIES: Record<string, string> = {
+export const QUERIES: Record<string, string> = {
   problems: "Condition?category=problem-list-item",
   diagnoses: "Condition?category=encounter-diagnosis",
   vitals: "Observation?category=vital-signs",
@@ -115,9 +116,9 @@ export async function getPatientRecord(patientId: string): Promise<PatientRecord
       const sep = q.endsWith("?") ? "" : "&";
       try {
         resources[key] = await search(`${q}${sep}patient=${encodeURIComponent(patientId)}`);
-      } catch {
+      } catch (e) {
         resources[key] = [];
-        missing.push(key);
+        missing.push(`${key} (${(e as Error).message.match(/\((\d+)\)/)?.[1] ?? "error"})`); // e.g. "coverage (403)": the status says why
       }
     }),
   );

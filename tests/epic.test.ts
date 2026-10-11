@@ -1,7 +1,7 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { generateKeyPairSync } from "node:crypto";
 import { decodeJwt, decodeProtectedHeader } from "jose";
-import { buildAssertion, epicConfig } from "@/lib/epic";
+import { buildAssertion, epicConfig, getPatientRecord } from "@/lib/epic";
 
 test("client assertion matches Epic's Backend Services rules, with trimmed settings", async () => {
   const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -20,4 +20,19 @@ test("client assertion matches Epic's Backend Services rules, with trimmed setti
   expect(c.aud).toBe("https://fhir.epic.com/interconnect-fhir-oauth/oauth2/token");
   expect(c.jti).toBeTruthy();
   expect(c.exp! - c.iat!).toBeLessThanOrEqual(300); // Epic: at most 5 minutes
+});
+
+test("a data type Epic refuses is listed with its HTTP status, the rest still load", async () => {
+  // Uses the settings from the test above to sign in.
+  const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+    const url = String(input);
+    if (url.endsWith("/token")) return Response.json({ access_token: "t", expires_in: 3600 });
+    if (url.includes("/Patient/")) return Response.json({ resourceType: "Patient", id: "p1" });
+    if (url.includes("/Coverage")) return new Response("", { status: 403 });
+    return Response.json({ resourceType: "Bundle", entry: [] });
+  });
+  const record = await getPatientRecord("p1");
+  expect(record.missing).toEqual(["coverage (403)"]);
+  expect(record.resources.medications).toEqual([]);
+  fetchMock.mockRestore();
 });
