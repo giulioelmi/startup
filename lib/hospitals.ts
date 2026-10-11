@@ -87,7 +87,7 @@ export const HOSPITALS: Hospital[] = [
     capabilities: [...ALL_ADULT, "trauma_adult", "trauma_peds", "picu", "nicu", "high_risk_ob"],
     workflow: [
       { type: "call", note: "Menu: 1 = physician / life-threatening / ER, 2 = transplant, 3 = RN or case manager (urgent or non-emergent). Have the answers to UCLA's transfer questionnaire ready (https://uclahealth.acquiaedge.net/sites/default/files/documents/95/questions-refering-facilities-ucla-transfer-center.docx). They arrange a physician-to-physician call and say where to fax records." },
-      { type: "receive_forms", note: "UCLA's transfer packet: upload it to the Forms inbox, or ask them to fax/email it." },
+      { type: "receive_forms", note: "UCLA's transfer packet: upload it, or ask them to fax/email it." },
       { type: "fill_forms", note: "" },
       { type: "send_fax", note: "Use the fax number they gave on the call." },
       { type: "wait_for_call", note: "Accept/decline comes back by phone." },
@@ -171,7 +171,7 @@ export const HOSPITALS: Hospital[] = [
     capabilities: [...ALL_ADULT, "trauma_adult", "burn", "nicu", "high_risk_ob"],
     workflow: [
       { type: "call", note: "Physician-to-physician request with the transfer center." },
-      { type: "receive_forms", note: "Transfer Request Form and Transfer Notification and Agreement Form: upload them to the Forms inbox, or ask them to fax/email them." },
+      { type: "receive_forms", note: "Transfer Request Form and Transfer Notification and Agreement Form: upload them, or ask them to fax/email them." },
       { type: "fill_forms", note: "" },
       { type: "send_fax", note: "Or email them to TxCtr@health.ucsd.edu." },
       { type: "wait_for_call", note: "Accept/decline comes back by phone." },

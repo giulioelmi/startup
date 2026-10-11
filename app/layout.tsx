@@ -21,7 +21,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
               TransferAI
             </Link>
             <Link href="/" className="hover:text-teal-700">Transfers</Link>
-            <Link href="/forms" className="hover:text-teal-700">Forms inbox</Link>
             <Link href="/facilities" className="hover:text-teal-700">Facilities</Link>
             <Link href="/patients" className="btn ml-auto">+ New transfer</Link>
           </nav>

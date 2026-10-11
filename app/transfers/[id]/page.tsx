@@ -253,7 +253,7 @@ function FormsStep({ t, ws, here, hospital, filled, reading, selected, href }: {
     <>
       <p className="text-sm text-slate-600">
         {ws.type === "receive_forms"
-          ? `Waiting for ${short(hospital)}'s forms. They arrive by fax${process.env.SENDING_HOSPITAL_FAX ? ` (${process.env.SENDING_HOSPITAL_FAX})` : ""} or email, or upload them in the Forms inbox; the AI fills them the moment they arrive.`
+          ? `Waiting for ${short(hospital)}'s forms. They arrive by fax${process.env.SENDING_HOSPITAL_FAX ? ` (${process.env.SENDING_HOSPITAL_FAX})` : ""} or email, or can be uploaded; the AI fills them the moment they arrive.`
           : `The AI fills every ${short(hospital)} form automatically, including new ones that arrive by email or fax. Review and approve.`}
       </p>
 

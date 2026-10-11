@@ -29,7 +29,7 @@ export default async function FormPage(props: PageProps<"/forms/[id]">) {
       {(form.status === "reading" || usedIn.some((u) => u.status === "filling")) && <AutoRefresh seconds={2} />}
       <div className="space-y-6 lg:col-span-4">
         <div>
-          <Link href="/forms" className="text-sm font-medium text-teal-700">← Forms inbox</Link>
+          <Link href="/forms" className="text-sm font-medium text-teal-700">← Forms</Link>
           <h1 className="mt-2">{form.name}</h1>
           <p className="mt-1 text-sm text-slate-500">Arrived by {form.source}{form.sender && ` from ${form.sender}`} · {form.received_at} UTC</p>
         </div>
