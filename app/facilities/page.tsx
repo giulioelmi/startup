@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { listForms } from "@/lib/forms";
 import { listHospitals } from "@/lib/hospitals";
-import { STEP_ICONS, STEP_TYPES } from "@/lib/workflow";
+import { STEP_TYPES } from "@/lib/workflow";
 
 export default async function FacilitiesPage() {
   const hospitals = await listHospitals();
@@ -30,7 +30,7 @@ export default async function FacilitiesPage() {
               {h.workflow.map((s, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="w-5 text-right text-slate-400">{i + 1}.</span>
-                  <span>{STEP_ICONS[s.type]} {STEP_TYPES[s.type]}</span>
+                  <span>{STEP_TYPES[s.type]}</span>
                 </li>
               ))}
               {h.workflow.length === 0 && <li className="text-slate-400">No workflow yet</li>}

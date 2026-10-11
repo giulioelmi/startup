@@ -6,7 +6,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { listForms } from "@/lib/forms";
 import { CAPABILITIES, getHospital } from "@/lib/hospitals";
-import { STEP_ICONS, STEP_TYPES } from "@/lib/workflow";
+import { STEP_TYPES } from "@/lib/workflow";
 
 // AI reading downloaded forms can take a while; allow up to 5 minutes on Vercel.
 export const maxDuration = 300;
@@ -46,7 +46,7 @@ export default async function FacilityPage(props: PageProps<"/facilities/[id]">)
             {h.workflow.map((s, i) => (
               <li key={i} className="relative">
                 <span className="absolute top-0 -left-[37px] grid h-7 w-7 place-items-center rounded-full bg-teal-700 text-sm font-bold text-white">{i + 1}</span>
-                <p className="font-semibold">{STEP_ICONS[s.type]} {STEP_TYPES[s.type]}</p>
+                <p className="font-semibold">{STEP_TYPES[s.type]}</p>
                 {s.number && <p className="text-sm text-slate-500">{s.number}</p>}
                 {s.note && <p className="text-sm text-slate-600">{s.note}</p>}
               </li>

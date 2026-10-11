@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { STEP_ICONS, STEP_TYPES, type StepType, type WorkflowStep } from "@/lib/workflow";
+import { STEP_TYPES, type StepType, type WorkflowStep } from "@/lib/workflow";
 
 // Build a facility's workflow from the step actions. Saved with the surrounding form as JSON in "workflow".
 export function WorkflowEditor({ initial }: { initial: WorkflowStep[] }) {
@@ -22,7 +22,7 @@ export function WorkflowEditor({ initial }: { initial: WorkflowStep[] }) {
           <div className="grid flex-1 gap-2 sm:grid-cols-2">
             <select value={s.type} onChange={(e) => update(i, { type: e.target.value as StepType })} className="input">
               {Object.entries(STEP_TYPES).map(([type, label]) => (
-                <option key={type} value={type}>{STEP_ICONS[type as StepType]} {label}</option>
+                <option key={type} value={type}>{label}</option>
               ))}
             </select>
             {(s.type === "call" || s.type === "send_fax") && (
