@@ -220,7 +220,11 @@ export async function renderFilled(pdf: Uint8Array, fields: FormField[], values:
       if (value === "true") field.check();
       else field.uncheck();
     }
-    else if (value && (field instanceof PDFDropdown || field instanceof PDFOptionList || field instanceof PDFRadioGroup)) field.select(value);
+    else if (value && (field instanceof PDFDropdown || field instanceof PDFOptionList || field instanceof PDFRadioGroup)) {
+      // Only one of the form's own options can be selected ("female" matches "Female"); anything else stays blank.
+      const option = field.getOptions().find((o) => o.toLowerCase() === value.toLowerCase());
+      if (option) field.select(option);
+    }
   }
   form.updateFieldAppearances(font);
   form.flatten();

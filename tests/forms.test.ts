@@ -158,3 +158,22 @@ test("fax packet = cover sheet + forms + record summary", async () => {
   expect(text).toContain("Penicillin: Hives");
   expect(text).toContain("Not available from EHR: procedures");
 });
+
+test("a choice the form doesn't offer is left blank instead of breaking the PDF", async () => {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const sex = doc.getForm().createRadioGroup("sex");
+  sex.addOptionToPage("Other", page, { x: 50, y: 700, width: 12, height: 12 }); // Cedars' form: the only option is "Other"
+  const unit = doc.getForm().createDropdown("unit");
+  unit.addOptions(["ICU", "Med-Surg"]);
+  unit.addToPage(page, { x: 50, y: 650, width: 100, height: 20 });
+  const fields: FormField[] = [
+    { name: "sex", label: "Sex", type: "choice", options: ["Other"] },
+    { name: "unit", label: "Unit", type: "choice", options: ["ICU", "Med-Surg"] },
+  ];
+  const out = await renderFilled(await doc.save(), fields, [
+    { name: "sex", value: "female", source: "Patient.gender" },
+    { name: "unit", value: "icu", source: "levelOfCare" },
+  ]);
+  expect(out.length).toBeGreaterThan(0);
+});
