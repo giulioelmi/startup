@@ -1,8 +1,10 @@
 import twilio from "twilio";
 import { z } from "zod";
-import { one, run } from "./db";
+import { after } from "next/server";
+import { audit, one, run } from "./db";
+import { recordOutcome } from "./agent";
 import { askForObject } from "./llm";
-import { getHospital } from "./hospitals";
+import { callContext, PLAYBOOK } from "./call-brief";
 import type { Transfer } from "./transfers";
 
 // Real phone calls through Twilio: their speech recognition turns what the
@@ -40,7 +42,8 @@ export async function addLine(callSid: string, who: Line["who"], text: string) {
   await run("UPDATE calls SET transcript = $1 WHERE call_sid = $2", [JSON.stringify(lines), callSid]);
 }
 
-// What the AI says first, without waiting on the model. Discloses it is an AI.
+// What the AI says first when a hospital calls us back, without waiting on the model. Discloses it is an AI.
+// Our own calls start by listening instead: the model opens once it hears who picked up (see `answer`).
 export function openingLine(t: Transfer) {
   const p = t.summary.patient;
   const d = t.details;
@@ -57,40 +60,42 @@ const spellPhone = (n: string) => n.replace(/\D/g, "").split("").join(" ");
 export type Reply = {
   say: string; // "" = stay silent (hold music, recorded announcements)
   pressDigits: string; // for phone menus, e.g. "2"; "" if none
-  outcome: "accepted" | "declined" | "none";
+  outcome: "accepted" | "declined" | "follow_up" | "none";
   outcomeReason: string;
   endCall: boolean;
 };
 
 export async function answer(t: Transfer, history: Line[], heard: string): Promise<Reply> {
-  const hospital = await getHospital(t.hospitalId);
   return askForObject(
     z.object({
       say: z.string(),
       pressDigits: z.string(),
-      outcome: z.enum(["accepted", "declined", "none"]),
+      outcome: z.enum(["accepted", "declined", "follow_up", "none"]),
       outcomeReason: z.string(),
       endCall: z.boolean(),
     }),
-    `You are an A.I. assistant on a live phone call with a hospital transfer center, requesting a patient transfer on behalf of a referring physician.
-Rules:
-- Answer ONLY from the chart and transfer details below. Never guess. If something is not there, say you don't have it and give the physician callback number.
-- Speak naturally and briefly (1-3 sentences). Say numbers and units in words a listener understands ("potassium three point nine").
-- If you hear a phone menu, set pressDigits to the option for transfers / transfer center / physicians; say nothing.
-- If you hear hold music, a recorded announcement, or nothing meaningful, say nothing ("").
-- If they accept the transfer, set outcome "accepted" (outcomeReason: bed/unit/accepting physician if given). If they decline, outcome "declined" with their reason.
-- If they ask for records, say they will be faxed to the number they give (repeat it back).
+    `${PLAYBOOK}
+
+How to reply (this engine hears one utterance at a time):
+- "say" is what you speak; "" stays silent (hold music, recordings, nothing meaningful, waiting for a person).
+- For a phone menu, set pressDigits to the option and say nothing.
+- outcome: "accepted" (outcomeReason: accepting physician, unit/bed, report number), "declined" (their reason), "follow_up" (what the team must do or answer), else "none".
 - Set endCall true only after the conversation is clearly over and you've said goodbye.`,
     JSON.stringify({
-      receivingHospital: hospital?.name,
-      howTheyTakeTransfers: hospital?.intakeNotes,
-      reasonForTransfer: t.reason,
-      transfer: t.details,
-      chart: t.summary,
+      ...(await callContext(t)),
       conversationSoFar: history.map((l) => `${l.who === "ai" ? "You" : "Them"}: ${l.text}`),
       theyJustSaid: heard,
     }),
   );
+}
+
+// What the AI learned on a call. Accepted/declined settles this hospital (declined: on to the nurse's next one);
+// a follow-up is something staff must do or answer.
+export async function recordCallResult(transferId: number, outcome: "accepted" | "declined" | "follow_up", details: string) {
+  if (outcome === "follow_up") return audit("ai-voice", "call.follow_up", transferId, details);
+  await audit("ai-voice", `transfer.${outcome}`, transferId, details);
+  const next = await recordOutcome(transferId, outcome, details, "ai-voice");
+  if (next) after(next);
 }
 
 // TwiML: optionally speak, then listen. Twilio calls `action` with what it heard.

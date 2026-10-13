@@ -68,6 +68,8 @@ const LABELS: Record<string, string> = {
   "form.edit": "Form edited by staff",
   "form.approve": "Form reviewed and approved",
   "call.start": "Call placed to transfer center",
+  "call.answered": "Transfer center picked up",
+  "call.follow_up": "Follow-up from the call",
   "call.greet": "AI presented the transfer request",
   "transfer.accepted": "Transfer ACCEPTED on the call",
   "transfer.declined": "Transfer declined on the call",
@@ -94,7 +96,7 @@ export async function activity(transferId: number): Promise<Activity[]> {
         ? (r.detail ?? "").split(", ").map((id) => names[id] ?? id).join(" → ")
         : r.action === "form.fill"
           ? (r.detail?.split(": ")[1] ?? null)
-          : r.action === "transfer.outcome"
+          : ["transfer.outcome", "call.follow_up"].includes(r.action)
             ? r.detail
             : null,
     }));

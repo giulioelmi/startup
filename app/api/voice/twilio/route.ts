@@ -1,9 +1,7 @@
-import { after } from "next/server";
-import { recordOutcome } from "@/lib/agent";
 import { audit, run } from "@/lib/db";
 import { matchHospitalByPhone } from "@/lib/hospitals";
 import { getTransfer, listTransfers } from "@/lib/transfers";
-import { addLine, answer, getTranscript, isFromTwilio, openingLine, speakAndHangUp, speakAndListen } from "@/lib/voice";
+import { addLine, answer, getTranscript, isFromTwilio, openingLine, recordCallResult, speakAndHangUp, speakAndListen } from "@/lib/voice";
 
 // AI work (reading/filling forms, answering calls) can take a while; allow up to 5 minutes on Vercel.
 export const maxDuration = 300;
@@ -58,7 +56,11 @@ export async function POST(req: Request) {
   const t = await getTransfer(transferId);
   if (!t) return hangUp("Sorry, this transfer is no longer available. Goodbye.");
 
-  if (step === "start") return greet(transferId);
+  // Our call was answered: listen first. A person or a phone menu always speaks first, and the model opens to fit.
+  if (step === "start") {
+    await audit("ai-voice", "call.answered", transferId);
+    return xml(speakAndListen(turnUrl(transferId)));
+  }
 
   // step === "turn"
   const heard = params.SpeechResult || (params.Digits ? `(pressed ${params.Digits})` : "");
@@ -66,7 +68,8 @@ export async function POST(req: Request) {
     // Silence or hold music: keep listening, up to ~5 minutes.
     const idle = Number(url.searchParams.get("idle") ?? 0) + 1;
     if (idle > 30) return hangUp("I'll call back later. Goodbye.");
-    return xml(speakAndListen(turnUrl(transferId, idle)));
+    const quietPickup = idle === 1 && (await getTranscript(callSid)).length === 0;
+    return xml(speakAndListen(turnUrl(transferId, idle), quietPickup ? "Hello?" : undefined));
   }
 
   const history = await getTranscript(callSid);
@@ -74,11 +77,7 @@ export async function POST(req: Request) {
   await audit("ai-voice", "call.answer", transferId);
   const reply = await answer(t, history, heard);
 
-  if (reply.outcome !== "none") {
-    await audit("ai-voice", `transfer.${reply.outcome}`, transferId);
-    const next = await recordOutcome(transferId, reply.outcome, reply.outcomeReason, "ai-voice"); // declined: on to the nurse's next hospital
-    if (next) after(next);
-  }
+  if (reply.outcome !== "none") await recordCallResult(transferId, reply.outcome, reply.outcomeReason);
   if (reply.say) await addLine(callSid, "ai", reply.say);
   if (reply.endCall) return hangUp(reply.say || "Thank you. Goodbye.");
   return xml(speakAndListen(turnUrl(transferId), reply.say, reply.pressDigits));

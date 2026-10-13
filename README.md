@@ -73,6 +73,14 @@ Any model works by changing two variables. Reading scanned/faxed forms needs a m
 2. On the number, set **A call comes in** → Webhook `POST {PUBLIC_URL}/api/voice/twilio?step=inbound`, and **Call status changes** → `POST {PUBLIC_URL}/api/voice/twilio/status`.
 3. Set `CALL_TEST_NUMBER` to **your own phone** and play the transfer center yourself. The patients are fake, so don't call real transfer centers.
 
+### 3b. ElevenLabs voice agent (optional, ~$0.08/min more)
+Same calls, but speech streams both ways: replies in under a second, and the nurse can interrupt. Twilio still carries the call.
+1. Get an API key at elevenlabs.io and add `ELEVENLABS_API_KEY` in Vercel (optional: `ELEVENLABS_LLM`, `ELEVENLABS_VOICE_ID`). Redeploy.
+2. Open **Voice agent** in the app and press **Create the agent**. It creates the agent, its tools and the transcript webhook, moves your Twilio number to it, and saves the IDs in the database. Calls use it right away.
+3. ElevenLabs now answers calls to the number too. To go back to Twilio turn-by-turn, remove `ELEVENLABS_API_KEY` and re-set the number's webhook from step 3.
+
+Each call gets its own brief (`lib/call-brief.ts`): the hospital's intake notes and workflow (what's done, what we faxed), the services the patient needs and why this hospital was picked, and the chart. A shared playbook covers phone menus, hold, voicemail, no beds, physician-to-physician, records requests, accept and decline. The agent reports through `record_result`: accepted/declined move the transfer on; follow-ups show up in the activity log. The transcript arrives when the call ends.
+
 ### 4. Forms by email (optional, Postmark free tier)
 Inbound webhook URL: `{PUBLIC_URL}/api/inbound/email?token={WEBHOOK_TOKEN}`. PDF/PNG/JPG attachments become forms; the sender's domain picks the hospital.
 
@@ -100,7 +108,9 @@ lib/ranking.ts    capability filter + distance + AI rationale
 lib/agent.ts      forms agent: read incoming forms, fill them for open transfers
 lib/forms.ts      find fields (PDF fields or AI vision on scans), AI fill, write PDF
 lib/pdf-pages.ts  PDF pages -> images / text positions
+lib/call-brief.ts what the AI knows going into a call + the playbook (both voice engines)
 lib/voice.ts      Twilio calls + AI answers
+lib/elevenlabs.ts ElevenLabs agent calls (lib/elevenlabs-setup.ts creates the agent from the Voice agent page)
 lib/fax.ts        fax packet + mock/Sinch sending
 lib/llm.ts        model-agnostic AI (env-selected provider)
 lib/db.ts         Postgres (Neon on Vercel, embedded PGlite locally) + audit log

@@ -15,6 +15,8 @@ import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/
 import { applyTo, downloadForms, fillOpenTransfersFor, nextChoice, processForm, queueFill, recordOutcome, runFills } from "@/lib/agent";
 import { buildPacket, sendFax, whyNotFax } from "@/lib/fax";
 import { startCall } from "@/lib/voice";
+import { elevenLabsEnabled, startAgentCall } from "@/lib/elevenlabs";
+import { setUpAgent } from "@/lib/elevenlabs-setup";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
@@ -161,12 +163,23 @@ export async function faxPacket(transferId: number, f: FormData) {
 export async function callTransferCenter(transferId: number, f: FormData) {
   if (!str(f, "to")) return "Enter the number to call.";
   try {
-    await startCall(transferId, str(f, "to"));
+    if (await elevenLabsEnabled()) await startAgentCall((await getTransfer(transferId))!, str(f, "to"));
+    else await startCall(transferId, str(f, "to"));
   } catch (e) {
     return `Could not place the call: ${(e as Error).message}`;
   }
   await audit("user", "call.start", transferId);
   redirect(`/transfers/${transferId}?step=${str(f, "step")}`);
+}
+
+export async function setUpVoiceAgent() {
+  try {
+    await setUpAgent();
+  } catch (e) {
+    return `Could not create the agent: ${(e as Error).message}`;
+  }
+  await audit("user", "voice.setup", null);
+  revalidatePath("/voice");
 }
 
 // ---------- Form library ----------

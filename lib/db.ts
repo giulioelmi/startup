@@ -71,6 +71,10 @@ const SCHEMA = [
     pdf BYTEA NOT NULL,
     created_at TEXT NOT NULL DEFAULT ${NOW}
   )`,
+  `CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL                   -- JSON
+  )`,
   `CREATE TABLE IF NOT EXISTS facilities (
     id TEXT PRIMARY KEY,
     data TEXT NOT NULL                    -- JSON Hospital (contact details, services, workflow)
