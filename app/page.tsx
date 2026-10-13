@@ -15,8 +15,10 @@ export default async function Dashboard() {
   const count = (s: string) => transfers.filter((t) => t.status === s).length;
   const forms = (await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM forms"))!.n;
   const aiFilled = (await one<{ n: number }>("SELECT COUNT(*)::int AS n FROM filled_forms WHERE status = 'ready'"))!.n;
+  const choosing = transfers.filter((t) => t.status === "open" && !t.hospitalId).length;
   const stats = [
-    ["In progress", count("open")],
+    ["Choosing a hospital", choosing],
+    ["Applying", count("open") - choosing],
     ["Accepted", count("accepted")],
     ["Forms filled by AI", aiFilled],
     ["Forms on file", forms],
@@ -33,7 +35,7 @@ export default async function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         {stats.map(([label, n]) => (
           <div key={label} className="card">
             <p className="text-3xl font-bold text-slate-900">{n}</p>
@@ -42,7 +44,7 @@ export default async function Dashboard() {
         ))}
       </div>
 
-      <div className="card overflow-hidden p-0">
+      <div className="card overflow-x-auto p-0">
         {transfers.length === 0 ? (
           <div className="p-10 text-center">
             <p className="text-slate-600">No transfers yet.</p>
@@ -65,9 +67,9 @@ export default async function Dashboard() {
                 <tr key={t.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3">
                     <Link className="font-semibold text-slate-900 hover:text-teal-700" href={`/transfers/${t.id}`}>{t.patientName}</Link>
-                    <p className="text-xs text-slate-500">#{t.id} · {t.createdAt.slice(0, 16)}</p>
+                    <p className="text-xs text-slate-500">#{t.id} · {t.createdAt.slice(0, 16)} UTC</p>
                   </td>
-                  <td className="max-w-xs truncate pr-4">{t.reason}</td>
+                  <td className="max-w-xs min-w-40 truncate pr-4">{t.reason}</td>
                   <td>
                     {t.rankingStatus === "running" ? (
                       <span className="flex items-center gap-2 text-teal-700"><Spinner /> AI ranking hospitals…</span>

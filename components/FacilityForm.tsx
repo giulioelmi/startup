@@ -1,4 +1,5 @@
 import { saveFacility } from "@/app/actions";
+import { Form } from "@/components/Form";
 import { SubmitButton } from "@/components/SubmitButton";
 import { WorkflowEditor } from "@/components/WorkflowEditor";
 import { CAPABILITIES, type Hospital } from "@/lib/hospitals";
@@ -19,7 +20,7 @@ export function FacilityForm({ h }: { h?: Hospital }) {
   );
 
   return (
-    <form action={saveFacility.bind(null, h?.id ?? null)} className="space-y-6">
+    <Form action={saveFacility.bind(null, h?.id ?? null)} className="space-y-6">
       <section className="card space-y-4">
         <h2>Transfer center</h2>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -68,6 +69,6 @@ export function FacilityForm({ h }: { h?: Hospital }) {
       </section>
 
       <SubmitButton busy="Saving…">Save facility</SubmitButton>
-    </form>
+    </Form>
   );
 }

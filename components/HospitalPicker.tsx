@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { Form } from "./Form";
 import { SubmitButton } from "./SubmitButton";
 
 // Tap hospitals in the order to apply to them: 1, 2, 3... Tap a numbered one again to take it out.
-export function HospitalPicker({ action, items, initial }: { action: (f: FormData) => Promise<void>; items: { id: string; card: ReactNode }[]; initial: string[] }) {
+export function HospitalPicker({ action, items, initial }: { action: (f: FormData) => Promise<string | void>; items: { id: string; card: ReactNode }[]; initial: string[] }) {
   const [order, setOrder] = useState(initial);
   const toggle = (id: string) => setOrder((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]));
   const changed = order.join() !== initial.join();
 
   return (
-    <form action={action} className="space-y-3">
+    <Form action={action} className="space-y-3">
       {order.map((id) => (
         <input key={id} type="hidden" name="hospital" value={id} />
       ))}
@@ -39,6 +40,6 @@ export function HospitalPicker({ action, items, initial }: { action: (f: FormDat
           </SubmitButton>
         </div>
       </div>
-    </form>
+    </Form>
   );
 }

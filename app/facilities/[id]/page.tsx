@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { downloadFacilityForms, removeFacility } from "@/app/actions";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { Form } from "@/components/Form";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { listForms } from "@/lib/forms";
@@ -30,9 +31,9 @@ export default async function FacilityPage(props: PageProps<"/facilities/[id]">)
         </div>
         <div className="flex gap-2">
           <Link href={`/facilities/${h.id}/edit`} className="btn">Edit</Link>
-          <form action={removeFacility.bind(null, h.id)}>
-            <SubmitButton className="btn-light">Delete</SubmitButton>
-          </form>
+          <Form action={removeFacility.bind(null, h.id)} className="max-w-xs">
+            <SubmitButton className="btn-light" confirm={`Delete ${h.name}?`}>Delete</SubmitButton>
+          </Form>
         </div>
       </div>
 
@@ -90,10 +91,10 @@ export default async function FacilityPage(props: PageProps<"/facilities/[id]">)
               {forms.length === 0 && <li className="px-3 py-3 text-slate-500">None yet. <Link href="/forms" className="font-medium text-teal-700">Upload one</Link>, or they arrive by fax/email.</li>}
             </ul>
             {missing.length > 0 && (
-              <form action={downloadFacilityForms.bind(null, h.id)} className="space-y-2">
+              <Form action={downloadFacilityForms.bind(null, h.id)} className="space-y-2">
                 <p className="text-slate-600">{missing.length} public form(s) not downloaded yet. They are also downloaded when this hospital is chosen for a transfer.</p>
                 <SubmitButton className="btn-light" busy="Downloading…">Download from hospital website</SubmitButton>
-              </form>
+              </Form>
             )}
           </section>
 
