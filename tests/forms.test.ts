@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { PDFDocument, PDFName, PDFString, StandardFonts } from "pdf-lib";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
-import { detectFields, fillValues, readForm, renderFilled, toPdf, type FormField } from "@/lib/forms";
+import { detectFields, fitText, fillValues, readForm, renderFilled, toPdf, type FormField } from "@/lib/forms";
 import { buildPacket } from "@/lib/fax";
 import { HOSPITALS } from "@/lib/hospitals";
 import { summarize } from "@/lib/summary";
@@ -176,4 +176,14 @@ test("a choice the form doesn't offer is left blank instead of breaking the PDF"
     { name: "unit", value: "icu", source: "levelOfCare" },
   ]);
   expect(out.length).toBeGreaterThan(0);
+});
+
+test("picks a font size that fits the box", async () => {
+  const font = await (await PDFDocument.create()).embedFont(StandardFonts.Helvetica);
+  expect(fitText("Jane Doe", font, 200, 20)).toEqual({ size: 10, lines: ["Jane Doe"] }); // short text: normal size
+  expect(fitText("Jane Doe", font, 200, 8).size).toBe(6); // short box: smaller, never bigger than the box
+  const long = fitText("Acute non-ST elevation myocardial infarction with ongoing chest pain", font, 150, 20);
+  expect(long.lines.length).toBe(2); // wraps onto two smaller lines instead of overflowing
+  expect(long.size).toBeLessThan(10);
+  expect(fitText("x", font, 50, 3).size).toBe(5); // tiny box: still drawn, at the minimum size
 });

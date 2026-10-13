@@ -13,14 +13,19 @@ export type ClinicalSummary = {
     phone: string | null;
     address: string | null;
     language: string | null;
+    maritalStatus: string | null;
+    race: string | null;
+    emergencyContact: string | null; // "name (relationship) phone"
+    primaryCareProvider: string | null;
   };
   problems: { name: string; status: string | null; onset: string | null }[];
   diagnoses: { name: string; date: string | null }[];
   allergies: { substance: string; reaction: string | null; severity: string | null }[];
   medications: { name: string; dosage: string | null; status: string | null }[];
   vitals: { name: string; value: string; date: string | null }[];
+  assessments: { name: string; value: string; date: string | null }[]; // code status, isolation, O2 device, mental status, diet...
   labs: { name: string; value: string; flag: string | null; date: string | null }[];
-  encounters: { type: string; class: string | null; start: string | null; location: string | null }[];
+  encounters: { type: string; class: string | null; start: string | null; location: string | null; admitSource: string | null }[];
   procedures: { name: string; date: string | null }[];
   coverage: { payer: string; memberId: string | null }[];
   notes: { title: string; date: string | null }[];
@@ -70,6 +75,8 @@ export function summarize(record: PatientRecord, today = new Date()): ClinicalSu
   const r = (k: string): any[] => (record.resources[k] ?? []) as FhirResource[];
   const name = p.name?.find((n: any) => n.use === "official") ?? p.name?.[0];
   const addr = p.address?.[0];
+  const contact = p.contact?.[0];
+  const race = p.extension?.find((e: any) => e.url.endsWith("us-core-race"))?.extension?.find((e: any) => e.url === "text")?.valueString;
   const mrn = p.identifier?.find((i: any) => /MRN/i.test(i.type?.text ?? "") || i.type?.coding?.some((c: any) => c.code === "MR"));
 
   return {
@@ -83,6 +90,12 @@ export function summarize(record: PatientRecord, today = new Date()): ClinicalSu
       phone: p.telecom?.find((t: any) => t.system === "phone")?.value ?? null,
       address: addr ? [addr.line?.join(" "), addr.city, addr.state, addr.postalCode].filter(Boolean).join(", ") : null,
       language: text(p.communication?.[0]?.language),
+      maritalStatus: text(p.maritalStatus),
+      race: race ?? null,
+      emergencyContact: contact
+        ? [contact.name?.text, contact.relationship?.[0] && `(${text(contact.relationship[0])})`, contact.telecom?.find((t: any) => t.system === "phone")?.value].filter(Boolean).join(" ")
+        : null,
+      primaryCareProvider: p.generalPractitioner?.[0]?.display ?? null,
     },
     problems: r("problems").map((c) => ({
       name: text(c.code) ?? "Unnamed problem",
@@ -101,8 +114,9 @@ export function summarize(record: PatientRecord, today = new Date()): ClinicalSu
       status: m.status ?? null,
     })),
     vitals: latest(r("vitals")).map(([n, o]) => ({ name: n, value: quantity(o)!, date: date(o.effectiveDateTime) })),
+    assessments: latest(r("assessments")).map(([n, o]) => ({ name: n, value: quantity(o)!, date: date(o.effectiveDateTime) })),
     labs: latest(r("labs"))
-      .slice(0, 40)
+      .slice(0, 150)
       .map(([n, o]) => ({ name: n, value: quantity(o)!, flag: text(o.interpretation?.[0]), date: date(o.effectiveDateTime) })),
     encounters: r("encounters")
       .sort((a, b) => String(b.period?.start ?? "").localeCompare(String(a.period?.start ?? "")))
@@ -112,6 +126,7 @@ export function summarize(record: PatientRecord, today = new Date()): ClinicalSu
         class: e.class?.display ?? e.class?.code ?? null,
         start: date(e.period?.start),
         location: e.location?.[0]?.location?.display ?? null,
+        admitSource: text(e.hospitalization?.admitSource),
       })),
     procedures: r("procedures").map((x) => ({ name: text(x.code) ?? "Unnamed procedure", date: date(x.performedDateTime ?? x.performedPeriod?.start) })),
     coverage: r("coverage").map((c) => ({

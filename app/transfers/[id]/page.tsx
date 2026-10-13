@@ -492,7 +492,6 @@ function Document({ t, view, ws, hospital, hospitals, filled, calls, faxes, even
 function HospitalProfile({ h }: { h: Hospital }) {
   return (
     <div className="space-y-4 rounded-lg bg-white p-5 text-sm">
-      {!h.verified && <Pill tone="amber">Contact details not yet verified</Pill>}
       <dl className="grid grid-cols-3 gap-3">
         <div><dt className="label">Transfer center</dt><dd>{h.transferPhone}</dd></div>
         <div><dt className="label">Fax</dt><dd>{h.transferFax ?? "—"}</dd></div>
