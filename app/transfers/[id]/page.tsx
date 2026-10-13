@@ -15,7 +15,7 @@ import { whyNotFax } from "@/lib/fax";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
 import { CAPABILITIES, listHospitals, type Hospital } from "@/lib/hospitals";
-import { STEP_ICONS, STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
+import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
 import { activity, progress, type Activity } from "@/lib/progress";
 import { getTransfer, type Transfer } from "@/lib/transfers";
 import type { Line } from "@/lib/voice";
@@ -94,7 +94,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
             {step === "hospital" && <HospitalStep t={t} hospitals={hospitals} href={href} />}
             {ws && hospital && (
               <>
-                <StepTitle n={n} title={`${STEP_ICONS[ws.type]} ${STEP_TYPES[ws.type]}`}>{ws.note}</StepTitle>
+                <StepTitle n={n} title={STEP_TYPES[ws.type]}>{ws.note}</StepTitle>
                 {(ws.type === "fill_forms" || ws.type === "receive_forms") && (
                   <FormsStep t={t} ws={ws} here={step} hospital={hospital} filled={filled} reading={reading.length} selected={selectedFilled(filled, q.doc)} href={href} />
                 )}
