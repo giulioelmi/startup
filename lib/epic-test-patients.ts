@@ -1,5 +1,5 @@
 // Epic's public FHIR sandbox test patients (fhir.epic.com > Documentation > Test Patients).
-// If one fails to load, check its ID against that page, or use the search box.
+// If one fails to load, check its ID against that page.
 export const TEST_PATIENTS = [
   { id: "erXuFYUfucBZaryVksYEcMg3", name: "Camila Lopez" },
   { id: "eq081-VQEgP8drUUqCWzHfw3", name: "Derrick Lin" },

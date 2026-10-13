@@ -62,7 +62,6 @@ export default async function FacilityPage(props: PageProps<"/facilities/[id]">)
 
         <div className="space-y-6 lg:col-span-5">
           <section className="card space-y-4 text-sm">
-            {!h.verified && <Pill tone="amber">Contact details not yet verified</Pill>}
             <dl className="grid grid-cols-2 gap-3">
               <div><dt className="label">Transfer center</dt><dd>{h.transferPhone}</dd></div>
               <div><dt className="label">Fax</dt><dd>{h.transferFax ?? "—"}</dd></div>
