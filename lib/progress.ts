@@ -6,7 +6,7 @@ import type { Transfer } from "./transfers";
 
 // Where a transfer stands, for the stepper and the dashboard:
 // chart, hospital, then the chosen facility's workflow steps ("w0", "w1", ...), then outcome.
-export type Step = { id: string; title: string; done: boolean; type?: StepType; index?: number };
+export type Step = { id: string; title: string; done: boolean; skipped?: boolean; type?: StepType; index?: number };
 
 const SHORT: Record<StepType, string> = {
   call: "Call",
@@ -47,7 +47,10 @@ export async function progress(t: Transfer) {
   const steps: Step[] = [
     { id: "chart", title: "Chart", done: true },
     { id: "hospital", title: "Hospital", done: !!t.hospitalId },
-    ...workflow.map((s, i) => ({ id: `w${i}`, title: SHORT[s.type], type: s.type, index: i, done: evidence(s.type) || t.skipped.includes(i) })),
+    ...workflow.map((s, i) => {
+      const done = evidence(s.type);
+      return { id: `w${i}`, title: SHORT[s.type], type: s.type, index: i, done: done || t.skipped.includes(i), skipped: !done && t.skipped.includes(i) };
+    }),
     { id: "outcome", title: "Outcome", done: t.status !== "open" },
   ];
   return { steps, workflow, next: steps.find((s) => !s.done)?.id ?? "outcome" };
@@ -57,6 +60,7 @@ export async function progress(t: Transfer) {
 const LABELS: Record<string, string> = {
   "transfer.create": "Chart pulled from the EHR",
   "transfer.rank": "AI ranked the receiving hospitals",
+  "transfer.rank.fallback": "AI unavailable: hospitals listed without AI ranking",
   "transfer.choose": "Hospitals chosen, in order",
   "transfer.next": "Moved on to the next hospital",
   "form.fill": "AI filled a transfer form",
@@ -88,6 +92,12 @@ export async function activity(transferId: number): Promise<Activity[]> {
       at: r.at,
       ai: r.actor.startsWith("ai"),
       text: LABELS[r.action],
-      detail: ["transfer.choose", "transfer.next"].includes(r.action) ? (r.detail ?? "").split(", ").map((id) => names[id] ?? id).join(" → ") : r.action === "form.fill" ? r.detail?.split(": ")[1] ?? null : r.action === "call.follow_up" ? r.detail : null,
+      detail: ["transfer.choose", "transfer.next"].includes(r.action)
+        ? (r.detail ?? "").split(", ").map((id) => names[id] ?? id).join(" → ")
+        : r.action === "form.fill"
+          ? (r.detail?.split(": ")[1] ?? null)
+          : ["transfer.outcome", "call.follow_up"].includes(r.action)
+            ? r.detail
+            : null,
     }));
 }

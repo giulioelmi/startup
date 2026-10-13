@@ -1,7 +1,17 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { run } from "./db";
+import type { Filled } from "./filled";
 import type { Hospital } from "./hospitals";
 import type { Transfer } from "./transfers";
+
+// Why the packet can't be faxed yet (null = ready). Marking the forms step done sends only the approved forms.
+export function whyNotFax(t: Transfer, filled: Filled[]): string | null {
+  const formsStep = (t.workflow ?? []).findIndex((s) => s.type === "fill_forms" || s.type === "receive_forms");
+  if (formsStep < 0 || t.skipped.includes(formsStep)) return null;
+  if (!filled.length) return "No forms filled yet. Add the hospital's forms, or mark the forms step done if none are needed.";
+  if (filled.some((f) => !f.approvedAt)) return "Approve every form first, or mark the forms step done to send only the approved ones.";
+  return null;
+}
 
 // ---------- Packet: cover sheet + filled forms + medical record summary ----------
 
@@ -25,7 +35,7 @@ export async function buildPacket(transfer: Transfer, hospital: Hospital, filled
     `Referring physician: ${d.referringPhysician}   Callback: ${d.callbackPhone}`,
     `Return fax: ${d.sendingFax}`,
     ...(d.caseManager ? [`Case manager: ${d.caseManager}`] : []),
-    `Date: ${new Date().toLocaleString("en-US")}`,
+    `Date: ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC`,
     `Pages (including cover): ${1 + formPages + recordPages}`,
     `Transfer reference #: ${transfer.id}  (say or key this number when calling us back)`,
     "",

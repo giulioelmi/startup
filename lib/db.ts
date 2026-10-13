@@ -82,6 +82,10 @@ const SCHEMA = [
   // The nurse's hospitals in the order to apply to them; hospital_id is the one being applied to now, since hospital_since.
   `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS choices TEXT NOT NULL DEFAULT '[]'`,
   `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS hospital_since TEXT`,
+  // Worklist order (staff can move transfers up and down); null means "where its id puts it", newest first.
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS sort_order INTEGER`,
+  // Hospitals that declined this transfer, with their reason: JSON {hospitalId, reason}[].
+  `ALTER TABLE transfers ADD COLUMN IF NOT EXISTS declines TEXT NOT NULL DEFAULT '[]'`,
   `CREATE TABLE IF NOT EXISTS audit (
     id SERIAL PRIMARY KEY,
     at TEXT NOT NULL DEFAULT ${NOW},

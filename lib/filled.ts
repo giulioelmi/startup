@@ -40,9 +40,9 @@ export async function getFilled(id: number): Promise<Filled | null> {
   return r ? parse(r) : null;
 }
 
-// Editing un-approves: a person must re-check after any change.
+// Editing un-approves: a person must re-check after any change. Saving also completes a form the AI couldn't fill.
 export async function saveValues(id: number, values: FieldValue[]) {
-  await run("UPDATE filled_forms SET values_json = $1, approved_by = NULL, approved_at = NULL WHERE id = $2", [JSON.stringify(values), id]);
+  await run("UPDATE filled_forms SET values_json = $1, status = 'ready', error = NULL, approved_by = NULL, approved_at = NULL WHERE id = $2", [JSON.stringify(values), id]);
 }
 
 export async function approve(id: number, by: string) {

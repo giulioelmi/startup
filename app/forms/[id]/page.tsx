@@ -4,6 +4,7 @@ import { deleteForm, rereadForm, updateForm } from "@/app/actions";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { FieldEditor } from "@/components/FieldEditor";
 import { PdfViewer } from "@/components/PdfViewer";
+import { Form } from "@/components/Form";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { all } from "@/lib/db";
@@ -15,6 +16,7 @@ export const maxDuration = 300;
 
 export default async function FormPage(props: PageProps<"/forms/[id]">) {
   const id = Number((await props.params).id);
+  if (!Number.isInteger(id)) notFound();
   const form = await getForm(id);
   if (!form) notFound();
   const fields = JSON.parse(form.fields) as FormField[];
@@ -55,7 +57,7 @@ export default async function FormPage(props: PageProps<"/forms/[id]">) {
             <p className="label">Filled for</p>
             {usedIn.length === 0 && <p className="text-slate-500">No open transfers to this hospital yet. It will be filled automatically when one starts.</p>}
             {usedIn.map((u) => (
-              <Link key={u.id} href={`/transfers/${u.transfer_id}?step=forms&doc=${u.id}`} className="flex justify-between py-1 hover:text-teal-700">
+              <Link key={u.id} href={`/transfers/${u.transfer_id}`} className="flex justify-between py-1 hover:text-teal-700">
                 <span>#{u.transfer_id} {u.patient_name}</span>
                 <Pill tone={u.status === "ready" ? "green" : u.status === "failed" ? "red" : "blue"} pulse={u.status === "filling"}>{u.status}</Pill>
               </Link>
@@ -75,9 +77,9 @@ export default async function FormPage(props: PageProps<"/forms/[id]">) {
           <SubmitButton className="btn-light">Save</SubmitButton>
         </form>
 
-        <form action={deleteForm.bind(null, id)}>
-          <SubmitButton className="text-sm text-rose-700 hover:underline">Delete form</SubmitButton>
-        </form>
+        <Form action={deleteForm.bind(null, id)}>
+          <SubmitButton className="text-sm text-rose-700 hover:underline" confirm={`Delete the form "${form.name}"?`}>Delete form</SubmitButton>
+        </Form>
       </div>
 
       <div className="lg:col-span-8">

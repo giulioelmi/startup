@@ -113,11 +113,20 @@ export async function applyTo(transferId: number, hospitalId: string) {
   };
 }
 
-// A hospital answered. If it declined and the nurse picked more hospitals, move on to the next one;
-// otherwise the transfer is closed with this outcome. Returns background work when it moved on.
+// The first hospital on the nurse's list that hasn't declined and still exists.
+export async function nextChoice(t: Transfer, choices = t.choices) {
+  for (const id of choices) if (!t.declines.some((d) => d.hospitalId === id) && (await getHospital(id))) return id;
+}
+
+// A hospital answered. A decline is kept with its reason; if the nurse picked more hospitals, the transfer
+// moves on to the next one, otherwise it is closed with this outcome. Returns background work when it moved on.
 export async function recordOutcome(transferId: number, status: Transfer["status"], reason: string, actor: string) {
   const t = (await getTransfer(transferId))!;
-  const next = status === "declined" && t.hospitalId ? t.choices[t.choices.indexOf(t.hospitalId) + 1] : undefined;
+  if (status === "declined" && t.hospitalId) {
+    t.declines = [...t.declines.filter((d) => d.hospitalId !== t.hospitalId), { hospitalId: t.hospitalId, reason }];
+    await updateTransfer(transferId, { declines: t.declines });
+  }
+  const next = status === "declined" ? await nextChoice(t) : undefined;
   if (!next) {
     await updateTransfer(transferId, { status, outcomeReason: reason });
     return null;

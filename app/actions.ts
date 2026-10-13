@@ -6,14 +6,14 @@ import { after } from "next/server";
 import { audit, one, run } from "@/lib/db";
 import { ehrName, getPatientRecord } from "@/lib/ehr";
 import { summarize } from "@/lib/summary";
-import { createTransfer, getTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
+import { createTransfer, deleteTransfer, getTransfer, moveTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
 import { CAPABILITIES, deleteHospital, getHospital, saveHospital, type Capability, type Hospital } from "@/lib/hospitals";
 import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
 import { saveForm, type FieldValue, type FormField } from "@/lib/forms";
 import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/filled";
-import { applyTo, downloadForms, fillOpenTransfersFor, processForm, queueFill, recordOutcome, runFills } from "@/lib/agent";
-import { buildPacket, sendFax } from "@/lib/fax";
+import { applyTo, downloadForms, fillOpenTransfersFor, nextChoice, processForm, queueFill, recordOutcome, runFills } from "@/lib/agent";
+import { buildPacket, sendFax, whyNotFax } from "@/lib/fax";
 import { startCall } from "@/lib/voice";
 import { elevenLabsEnabled, startAgentCall } from "@/lib/elevenlabs";
 
@@ -22,6 +22,10 @@ const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 // ---------- Transfers ----------
 
 export async function startTransfer(f: FormData) {
+  const missing = [["reason", "Reason for transfer"], ["referringPhysician", "Referring physician"], ["callbackPhone", "Physician callback"], ["levelOfCare", "Level of care"], ["sendingHospital", "Sending hospital"]]
+    .filter(([k]) => !str(f, k))
+    .map(([, label]) => label);
+  if (missing.length) return `Please fill in: ${missing.join(", ")}.`;
   const patientId = str(f, "patientId");
   const record = await getPatientRecord(patientId);
   const summary = summarize(record);
@@ -50,9 +54,10 @@ async function startRanking(transferId: number) {
 async function rank(transferId: number) {
   try {
     const t = (await getTransfer(transferId))!;
-    await updateTransfer(transferId, { ranking: await rankHospitals(t.summary, t.reason) });
+    const ranking = await rankHospitals(t.summary, t.reason);
+    await updateTransfer(transferId, { ranking });
     await setRankingStatus(transferId, null);
-    await audit("ai", "transfer.rank", transferId);
+    await audit("ai", ranking.ai ? "transfer.rank" : "transfer.rank.fallback", transferId);
   } catch (e) {
     console.error(e);
     await setRankingStatus(transferId, "failed", String((e as Error).message ?? e).slice(0, 500)); // the page shows it and offers a retry
@@ -64,14 +69,22 @@ export async function runRanking(transferId: number) {
   redirect("/");
 }
 
-// The nurse's hospitals, in the order to apply to them. The transfer starts with the first;
-// when one declines, it moves on to the next.
+// The nurse's hospitals, in the order to apply to them. The transfer applies to the first one that hasn't
+// declined; when one declines, it moves on to the next. Re-ordering keeps the hospital being applied to now.
 export async function chooseHospitals(transferId: number, f: FormData) {
   const choices = f.getAll("hospital").map(String);
-  if (!choices.length) throw new Error("Pick at least one hospital.");
-  await updateTransfer(transferId, { choices, status: "open" });
+  if (!choices.length) return "Pick at least one hospital.";
+  const t = (await getTransfer(transferId))!;
+  await updateTransfer(transferId, { choices });
   await audit("user", "transfer.choose", transferId, choices.join(", "));
-  after(await applyTo(transferId, choices[0]));
+  if (t.hospitalId && choices.includes(t.hospitalId) && !t.declines.some((d) => d.hospitalId === t.hospitalId)) {
+    revalidatePath(`/transfers/${transferId}`);
+    return;
+  }
+  const next = await nextChoice(t, choices);
+  if (!next) return "Every hospital on the list has declined. Add another one.";
+  await updateTransfer(transferId, { status: "open" });
+  after(await applyTo(transferId, next));
   redirect(`/transfers/${transferId}?step=w0`);
 }
 
@@ -85,6 +98,7 @@ export async function toggleStep(transferId: number, index: number) {
 }
 
 export async function setOutcome(transferId: number, f: FormData) {
+  if (str(f, "status") === "declined" && !str(f, "reason")) return "Add the reason they declined.";
   await audit("user", "transfer.outcome", transferId, str(f, "status"));
   const next = await recordOutcome(transferId, str(f, "status") as Transfer["status"], str(f, "reason"), "user");
   if (next) {
@@ -92,6 +106,17 @@ export async function setOutcome(transferId: number, f: FormData) {
     redirect(`/transfers/${transferId}?step=w0`); // on to the next hospital's workflow
   }
   revalidatePath(`/transfers/${transferId}`);
+}
+
+export async function moveInWorklist(transferId: number, direction: -1 | 1) {
+  await moveTransfer(transferId, direction);
+  revalidatePath("/");
+}
+
+export async function removeTransfer(transferId: number) {
+  await deleteTransfer(transferId);
+  await audit("user", "transfer.delete", transferId);
+  revalidatePath("/");
 }
 
 // ---------- Filled forms (the agent fills; people review) ----------
@@ -109,7 +134,7 @@ export async function saveFilled(filledId: number, f: FormData) {
     const value = field.type === "checkbox" ? String(f.get(`v:${field.name}`) === "on") : str(f, `v:${field.name}`);
     return { name: field.name, value, source: old && old.value === value ? old.source : "edited by user" };
   });
-  await saveValues(filledId, values);
+  await saveValues(filledId, values); // also how staff fill a form by hand when the AI couldn't
   if (str(f, "approver")) await approve(filledId, str(f, "approver"));
   await audit("user", str(f, "approver") ? "form.approve" : "form.edit", filled.transferId, `filled ${filledId}`);
   revalidatePath(`/transfers/${filled.transferId}`);
@@ -120,8 +145,11 @@ export async function saveFilled(filledId: number, f: FormData) {
 export async function faxPacket(transferId: number, f: FormData) {
   const t = (await getTransfer(transferId))!;
   const hospital = (await getHospital(t.hospitalId))!;
-  const filled = (await listFilled(transferId)).filter((x) => x.status === "ready");
-  if (filled.some((x) => !x.approvedAt)) throw new Error("Every filled form must be approved before faxing.");
+  const all = await listFilled(transferId);
+  const blocked = whyNotFax(t, all);
+  if (blocked) return blocked;
+  if (!str(f, "to")) return "Enter the fax number.";
+  const filled = all.filter((x) => x.approvedAt);
   const pdfs = await Promise.all(filled.map(async (x) => (await getFilledPdf(x.id))!.pdf));
   const packet = await buildPacket(t, hospital, pdfs);
   await sendFax(transferId, str(f, "to"), packet);
@@ -132,8 +160,13 @@ export async function faxPacket(transferId: number, f: FormData) {
 // ---------- Calls ----------
 
 export async function callTransferCenter(transferId: number, f: FormData) {
-  if (elevenLabsEnabled()) await startAgentCall((await getTransfer(transferId))!, str(f, "to"));
-  else await startCall(transferId, str(f, "to"));
+  if (!str(f, "to")) return "Enter the number to call.";
+  try {
+    if (elevenLabsEnabled()) await startAgentCall((await getTransfer(transferId))!, str(f, "to"));
+    else await startCall(transferId, str(f, "to"));
+  } catch (e) {
+    return `Could not place the call: ${(e as Error).message}`;
+  }
   await audit("user", "call.start", transferId);
   redirect(`/transfers/${transferId}?step=${str(f, "step")}`);
 }
@@ -141,7 +174,8 @@ export async function callTransferCenter(transferId: number, f: FormData) {
 // ---------- Form library ----------
 
 export async function uploadForm(f: FormData) {
-  const file = f.get("file") as File;
+  const file = f.get("file") as File | null;
+  if (!file?.size) return "Choose a file to upload.";
   const id = await saveForm({
     name: str(f, "name") || file.name.replace(/\.[a-z]+$/i, ""),
     bytes: new Uint8Array(await file.arrayBuffer()),
@@ -173,7 +207,7 @@ export async function saveFormFields(formId: number, fields: FormField[]) {
 }
 
 export async function deleteForm(formId: number) {
-  if (await one("SELECT 1 FROM filled_forms WHERE form_id = $1", [formId])) throw new Error("This form was used in a transfer; it can't be deleted.");
+  if (await one("SELECT 1 FROM filled_forms WHERE form_id = $1", [formId])) return "This form was used in a transfer, so it can't be deleted.";
   await run("DELETE FROM forms WHERE id = $1", [formId]);
   redirect("/forms");
 }
@@ -185,6 +219,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(
 
 // `id` is null for a new facility.
 export async function saveFacility(id: string | null, f: FormData) {
+  if (!str(f, "name") || !str(f, "transferPhone")) return "Name and transfer center phone are required.";
   const workflow = (JSON.parse(str(f, "workflow") || "[]") as WorkflowStep[]).filter((s) => s.type in STEP_TYPES);
   const h: Hospital = {
     id: id ?? (slug(str(f, "name")) || `facility-${Date.now()}`),
@@ -204,14 +239,15 @@ export async function saveFacility(id: string | null, f: FormData) {
     formUrls: lines(str(f, "formUrls")),
     edited: true,
   };
-  if (!id && (await getHospital(h.id))) throw new Error(`A facility called "${h.name}" already exists.`);
+  if (!id && (await getHospital(h.id))) return `A facility called "${h.name}" already exists.`;
   await saveHospital(h);
   await audit("user", id ? "facility.edit" : "facility.create", null, h.id);
   redirect(`/facilities/${h.id}`);
 }
 
 export async function removeFacility(id: string) {
-  if (await one("SELECT 1 FROM transfers WHERE hospital_id = $1", [id])) throw new Error("This facility has transfers; it can't be deleted.");
+  if (await one("SELECT 1 FROM transfers WHERE hospital_id = $1 OR choices LIKE $2", [id, `%${JSON.stringify(id)}%`]))
+    return "This facility is on a transfer's hospital list, so it can't be deleted.";
   await deleteHospital(id);
   await audit("user", "facility.delete", null, id);
   redirect("/facilities");
@@ -221,4 +257,7 @@ export async function downloadFacilityForms(id: string) {
   const ids = await downloadForms(id);
   after(() => Promise.all(ids.map(processForm)));
   revalidatePath(`/facilities/${id}`);
+  const failed = [];
+  for (const url of (await getHospital(id))?.formUrls ?? []) if (!(await one("SELECT 1 FROM forms WHERE sender = $1", [url]))) failed.push(url);
+  if (failed.length) return `Couldn't download ${failed.length} form(s) from the hospital website. Check the links, or upload the forms by hand.`;
 }

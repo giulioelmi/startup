@@ -7,9 +7,11 @@ import { HospitalPicker } from "@/components/HospitalPicker";
 import { PdfViewer } from "@/components/PdfViewer";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
+import { Form } from "@/components/Form";
 import { Pill, Spinner, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
 import { ehrName } from "@/lib/ehr";
+import { whyNotFax } from "@/lib/fax";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
 import { CAPABILITIES, listHospitals, type Hospital } from "@/lib/hospitals";
@@ -29,6 +31,7 @@ const LIVE_CALL = ["queued", "initiated", "ringing", "in-progress"];
 // the current step on the left, the document for that step on the right.
 export default async function TransferPage(props: PageProps<"/transfers/[id]">) {
   const id = Number((await props.params).id);
+  if (!Number.isInteger(id)) notFound();
   const t = await getTransfer(id);
   if (!t) notFound();
   const q = (await props.searchParams) as { step?: string; doc?: string };
@@ -43,8 +46,10 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
   const hospital = hospitals.find((h) => h.id === t.hospitalId);
   const filled = await listFilled(id);
   const reading = hospital ? (await listForms(hospital.id)).filter((f) => f.status === "reading") : [];
-  const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 ORDER BY id DESC", [id]);
-  const faxes = await all<FaxRow>("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = $1 ORDER BY id DESC", [id]);
+  // Only calls and faxes for the hospital being applied to now (earlier ones went to hospitals that declined).
+  const since = t.hospitalSince ?? "";
+  const calls = await all<CallRow>("SELECT * FROM calls WHERE transfer_id = $1 AND created_at >= $2 ORDER BY id DESC", [id, since]);
+  const faxes = await all<FaxRow>("SELECT id, to_number, provider, status, created_at FROM faxes WHERE transfer_id = $1 AND created_at >= $2 ORDER BY id DESC", [id, since]);
   const events = await activity(id);
   const busy = t.rankingStatus === "running" || filled.some((f) => f.status === "filling") || reading.length > 0 || calls.some((c) => LIVE_CALL.includes(c.status));
   const p = t.summary.patient;
@@ -78,7 +83,7 @@ export default async function TransferPage(props: PageProps<"/transfers/[id]">) 
         </div>
       </div>
 
-      <div className="card py-4">
+      <div className="card overflow-x-auto py-4">
         <Stepper steps={steps} current={step} href={(s) => href(s)} />
       </div>
 
@@ -180,8 +185,8 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
   if (!t.ranking)
     return (
       <>
-        <StepTitle n={2} title="Choose the receiving hospital">The AI could not rank the hospitals yet (check the AI model settings).</StepTitle>
-        {t.rankingError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800">AI error: {t.rankingError}</p>}
+        <StepTitle n={2} title="Choose the receiving hospital">Something went wrong while ranking the hospitals. Try again.</StepTitle>
+        {t.rankingError && <details className="text-xs text-slate-500"><summary>Technical details</summary>{t.rankingError}</details>}
         <form action={runRanking.bind(null, t.id)}>
           <SubmitButton busy="Starting…">Rank hospitals with AI</SubmitButton>
         </form>
@@ -213,8 +218,7 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
         items={t.ranking.hospitals.flatMap((r, i) => {
           const h = hospitals.find((x) => x.id === r.hospitalId);
           if (!h) return []; // facility deleted since the ranking
-          const at = t.choices.indexOf(h.id);
-          const now = t.choices.indexOf(t.hospitalId ?? "");
+          const declined = t.declines.find((d) => d.hospitalId === h.id);
           const card = (
             <>
               <p className="font-semibold text-slate-900">
@@ -222,8 +226,7 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
                 <Link href={href("hospital", h.id)} className="text-sm font-medium text-teal-700 hover:underline">Details</Link>
               </p>
               <div className="mt-1 flex flex-wrap gap-2 text-xs">
-                {h.id === t.hospitalId && <Pill tone="green">{t.status === "open" ? "Applying now" : t.status}</Pill>}
-                {at >= 0 && at < now && <Pill tone="red">Declined</Pill>}
+                {declined ? <Pill tone="red">Declined</Pill> : h.id === t.hospitalId && <Pill tone="green">{t.status === "open" ? "Applying now" : t.status}</Pill>}
                 {r.distanceMiles != null && <Pill>{r.distanceMiles} mi</Pill>}
                 {noAI ? null : r.eligible ? (
                   <Pill tone="green">All needed services</Pill>
@@ -231,6 +234,7 @@ function HospitalStep({ t, hospitals, href }: { t: Transfer; hospitals: Hospital
                   <Pill tone="red">Missing {r.missing.map((m) => CAPABILITIES[m]).join(", ")}</Pill>
                 )}
               </div>
+              {declined?.reason && <p className="mt-2 text-sm text-rose-700">Declined: {declined.reason}</p>}
               {r.rationale && <p className="mt-2 text-sm text-slate-600">{r.rationale}</p>}
             </>
           );
@@ -283,14 +287,14 @@ function FormsStep({ t, ws, here, hospital, filled, reading, selected, href }: {
 
       {selected?.status === "failed" && (
         <div className="space-y-2 text-sm text-rose-700">
-          <p>The AI could not fill this form: {selected.error}</p>
+          <p>The AI could not fill this form.{selected.fields.length > 0 && " Fill it in below, or try the AI again."}</p>
           <form action={refillForm.bind(null, t.id, selected.formId)}>
-            <SubmitButton className="btn-light">Try again</SubmitButton>
+            <SubmitButton className="btn-light">Try the AI again</SubmitButton>
           </form>
         </div>
       )}
 
-      {selected?.status === "ready" && <Review f={selected} t={t} />}
+      {(selected?.status === "ready" || (selected?.status === "failed" && selected.fields.length > 0)) && <Review f={selected} t={t} />}
     </>
   );
 }
@@ -298,6 +302,13 @@ function FormsStep({ t, ws, here, hospital, filled, reading, selected, href }: {
 // Every value the AI entered, with its source. Missing items are flagged.
 function Review({ f, t }: { f: Filled; t: Transfer }) {
   const missing = f.values.filter((v) => v.source === "not in record").length;
+  if (f.status === "failed")
+    return (
+      <form action={saveFilled.bind(null, f.id)} className="space-y-3">
+        <Fields f={f} />
+        <SubmitButton busy="Saving…">Save</SubmitButton>
+      </form>
+    );
   return (
     <form action={saveFilled.bind(null, f.id)} className="space-y-3">
       <div className="flex items-center justify-between text-sm">
@@ -309,25 +320,7 @@ function Review({ f, t }: { f: Filled; t: Transfer }) {
           Re-fill with AI
         </button>
       </div>
-      <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-        {f.fields.map((field) => {
-          const v = f.values.find((x) => x.name === field.name);
-          const gap = v?.source === "not in record";
-          return (
-            <label key={field.name} className="block">
-              <span className="flex justify-between text-xs">
-                <span className="font-semibold text-slate-600">{field.label}</span>
-                <span className={gap ? "text-amber-700" : "text-slate-400"}>{v?.source}</span>
-              </span>
-              {field.type === "checkbox" ? (
-                <input type="checkbox" name={`v:${field.name}`} defaultChecked={v?.value === "true"} className="mt-1" />
-              ) : (
-                <input name={`v:${field.name}`} defaultValue={v?.value} className={`input mt-1 ${gap ? "border-amber-300 bg-amber-50" : ""}`} />
-              )}
-            </label>
-          );
-        })}
-      </div>
+      <Fields f={f} />
       {f.approvedAt ? (
         <p className="text-sm font-medium text-emerald-700">✓ Approved by {f.approvedBy} · {f.approvedAt} UTC</p>
       ) : (
@@ -337,6 +330,31 @@ function Review({ f, t }: { f: Filled; t: Transfer }) {
         </div>
       )}
     </form>
+  );
+}
+
+// The form's fields as inputs, with where each value came from.
+function Fields({ f }: { f: Filled }) {
+  return (
+    <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+      {f.fields.map((field) => {
+        const v = f.values.find((x) => x.name === field.name);
+        const gap = v?.source === "not in record";
+        return (
+          <label key={field.name} className="block">
+            <span className="flex justify-between text-xs">
+              <span className="font-semibold text-slate-600">{field.label}</span>
+              <span className={gap ? "text-amber-700" : "text-slate-400"}>{v?.source}</span>
+            </span>
+            {field.type === "checkbox" ? (
+              <input type="checkbox" name={`v:${field.name}`} defaultChecked={v?.value === "true"} className="mt-1" />
+            ) : (
+              <input name={`v:${field.name}`} defaultValue={v?.value} className={`input mt-1 ${gap ? "border-amber-300 bg-amber-50" : ""}`} />
+            )}
+          </label>
+        );
+      })}
+    </div>
   );
 }
 
@@ -351,14 +369,16 @@ function CallStep({ t, ws, here, hospital, calls, selected, href }: { t: Transfe
           : `${short(hospital)} calls back${process.env.TWILIO_PHONE_NUMBER ? ` ${process.env.TWILIO_PHONE_NUMBER}` : " our number"} with reference #${t.id}; the AI answers from the chart and records the decision.`}
       </p>
       {outbound && (
-        <form action={callTransferCenter.bind(null, t.id)} className="flex items-end gap-2">
+        <Form action={callTransferCenter.bind(null, t.id)} className="space-y-2">
           <input type="hidden" name="step" value={here} />
-          <div className="flex-1">
-            <label className="label">Number to call</label>
-            <input name="to" defaultValue={process.env.CALL_TEST_NUMBER || ws.number || hospital.transferPhone} className="input" />
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="label">Number to call</label>
+              <input name="to" required defaultValue={process.env.CALL_TEST_NUMBER || ws.number || hospital.transferPhone} className="input" />
+            </div>
+            <SubmitButton busy="Dialing…">📞 Call now</SubmitButton>
           </div>
-          <SubmitButton busy="Dialing…">📞 Call now</SubmitButton>
-        </form>
+        </Form>
       )}
       <ul className="divide-y rounded-lg border">
         {shown.map((c) => (
@@ -381,25 +401,29 @@ function CallStep({ t, ws, here, hospital, calls, selected, href }: { t: Transfe
 }
 
 function FaxStep({ t, ws, here, workflow, hospital, filled, faxes, href }: { t: Transfer; ws: WorkflowStep; here: string; workflow: WorkflowStep[]; hospital: Hospital; filled: Filled[]; faxes: FaxRow[]; href: Href }) {
-  const approved = filled.every((f) => f.status === "ready" && f.approvedAt);
-  const formsStep = workflow.findIndex((s) => s.type === "fill_forms");
+  const blocked = whyNotFax(t, filled);
+  const formsStep = workflow.findIndex((s) => s.type === "fill_forms" || s.type === "receive_forms");
   return (
     <>
       <p className="text-sm text-slate-600">
-        Cover sheet, {filled.length ? "approved forms " : ""}and the medical record summary in one fax.
+        Cover sheet, {filled.some((f) => f.approvedAt) ? "approved forms " : ""}and the medical record summary in one fax.
         {(process.env.FAX_PROVIDER || "mock") === "mock" && " Fax is in mock mode: the packet is built but not transmitted."}
       </p>
-      <form action={faxPacket.bind(null, t.id)} className="flex items-end gap-2">
+      <Form action={faxPacket.bind(null, t.id)} className="space-y-2">
         <input type="hidden" name="step" value={here} />
-        <div className="flex-1">
-          <label className="label">Fax to</label>
-          <input name="to" defaultValue={process.env.FAX_TEST_NUMBER || ws.number || hospital.transferFax || ""} required className="input" />
+        <div className="flex items-end gap-2">
+          <div className="flex-1">
+            <label className="label">Fax to</label>
+            <input name="to" defaultValue={process.env.FAX_TEST_NUMBER || ws.number || hospital.transferFax || ""} required className="input" />
+          </div>
+          <SubmitButton disabled={!!blocked} busy="Sending…" confirm={faxes.length ? `A fax already went to ${short(hospital)}. Send it again?` : undefined}>
+            {faxes.length ? "Send again" : "Send fax"}
+          </SubmitButton>
         </div>
-        <SubmitButton disabled={!approved} busy="Sending…">Send fax</SubmitButton>
-      </form>
-      {!approved && (
+      </Form>
+      {blocked && (
         <p className="text-sm text-amber-700">
-          Approve the forms first.{formsStep >= 0 && <> <Link className="font-medium underline" href={href(`w${formsStep}`)}>Go to forms</Link></>}
+          {blocked}{formsStep >= 0 && <> <Link className="font-medium underline" href={href(`w${formsStep}`)}>Go to forms</Link></>}
         </p>
       )}
       {faxes.length > 0 && <ul className="divide-y rounded-lg border">
@@ -420,14 +444,14 @@ function FaxStep({ t, ws, here, workflow, hospital, filled, faxes, href }: { t: 
 }
 
 function OutcomeStep({ t, n }: { t: Transfer; n: number }) {
-  const left = t.choices.length - 1 - t.choices.indexOf(t.hospitalId ?? "");
+  const left = t.choices.filter((id) => id !== t.hospitalId && !t.declines.some((d) => d.hospitalId === id)).length;
   return (
     <>
       <StepTitle n={n} title="Outcome">Set automatically when the transfer center accepts or declines on the call; you can also record it here.</StepTitle>
       {left > 0 && t.status === "open" && (
         <p className="rounded-lg bg-teal-50 p-3 text-sm text-teal-900">If they decline, the app moves on to the next hospital on your list ({left} left).</p>
       )}
-      <form action={setOutcome.bind(null, t.id)} className="space-y-3">
+      <Form action={setOutcome.bind(null, t.id)} className="space-y-3">
         <select name="status" defaultValue={t.status} className="input">
           <option value="open">Open</option>
           <option value="accepted">Accepted</option>
@@ -436,7 +460,7 @@ function OutcomeStep({ t, n }: { t: Transfer; n: number }) {
         </select>
         <input name="reason" defaultValue={t.outcomeReason ?? ""} placeholder="Accepting physician, bed, or reason declined" className="input" />
         <SubmitButton>Save outcome</SubmitButton>
-      </form>
+      </Form>
     </>
   );
 }
@@ -492,11 +516,10 @@ function Document({ t, view, ws, hospital, hospitals, filled, calls, faxes, even
 function HospitalProfile({ h }: { h: Hospital }) {
   return (
     <div className="space-y-4 rounded-lg bg-white p-5 text-sm">
-      {!h.verified && <Pill tone="amber">Contact details not yet verified</Pill>}
-      <dl className="grid grid-cols-3 gap-3">
+      <dl className="grid gap-3 sm:grid-cols-3">
         <div><dt className="label">Transfer center</dt><dd>{h.transferPhone}</dd></div>
         <div><dt className="label">Fax</dt><dd>{h.transferFax ?? "—"}</dd></div>
-        <div><dt className="label">Email</dt><dd>{h.transferEmail ?? "—"}</dd></div>
+        <div><dt className="label">Email</dt><dd className="break-all">{h.transferEmail ?? "—"}</dd></div>
       </dl>
       <div><p className="label">Address</p><p>{h.address}</p></div>
       <div><p className="label">How they take transfers</p><p>{h.intakeNotes}</p></div>

@@ -58,7 +58,7 @@ export async function callContext(t: Transfer) {
       whyThisHospital: ranked?.rationale,
       servicesThisHospitalLacks: ranked?.missing.map((c) => CAPABILITIES[c]),
     },
-    alreadyDeclinedBy: t.choices.slice(0, Math.max(0, t.choices.indexOf(t.hospitalId ?? ""))),
+    alreadyDeclined: t.declines, // other hospitals' answers on this transfer, with their reasons
     referral: t.details, // sending hospital, referring physician, callback number, case manager
     chart: t.summary,
   };

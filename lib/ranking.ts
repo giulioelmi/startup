@@ -10,7 +10,7 @@ export type RankedHospital = {
   distanceMiles: number | null;
   rationale: string;
 };
-// `ai: false` means the AI was unavailable: hospitals are ordered by distance only.
+// `ai: false` means the AI was unavailable: hospitals are ordered by distance only (when the sending hospital's location is set).
 export type Ranking = { ai?: boolean; needs: Capability[]; needsExplanation: string; hospitals: RankedHospital[] };
 
 export function distanceMiles(lat1: number, lng1: number, lat2: number, lng2: number) {
@@ -50,8 +50,10 @@ export async function rankHospitals(summary: ClinicalSummary, reason: string): P
     return { ai: true, ...(await rankWithAI(summary, reason, hospitals)) };
   } catch (e) {
     console.error("AI ranking failed:", (e as Error).message);
-    const ranked = rank([], hospitals, sendingLocation()).map((r) => ({ ...r, rationale: "" }));
-    return { ai: false, needs: [], needsExplanation: `The AI could not rank the hospitals (${(e as Error).message}), so they are ordered by distance only. Pick any hospital, or re-run the AI.`, hospitals: ranked };
+    const from = sendingLocation();
+    const ranked = rank([], hospitals, from).map((r) => ({ ...r, rationale: "" }));
+    const order = from ? "ordered by distance" : "not ranked";
+    return { ai: false, needs: [], needsExplanation: `The AI is unavailable right now, so these hospitals are ${order}. Pick any of them, or try the AI again later.`, hospitals: ranked };
   }
 }
 

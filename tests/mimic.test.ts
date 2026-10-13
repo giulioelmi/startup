@@ -11,7 +11,7 @@ const tables = {
   patients: [{ subject_id: "10000032", gender: "F", anchor_age: "52", anchor_year: "2180" }],
   admissions: [
     { subject_id: "10000032", hadm_id: "1", admittime: "2180-05-06 22:23:00", dischtime: "2180-05-07 17:15:00", admission_type: "URGENT", insurance: "Other", language: "ENGLISH", hospital_expire_flag: "0" },
-    { subject_id: "10000032", hadm_id: "2", admittime: "2180-07-23 12:35:00", dischtime: "2180-07-25 17:55:00", admission_type: "EW EMER.", insurance: "Medicaid", language: "ENGLISH", hospital_expire_flag: "0" },
+    { subject_id: "10000032", hadm_id: "2", admittime: "2180-07-23 12:35:00", dischtime: "2180-07-25 17:55:00", admission_type: "EW EMER.", admission_location: "EMERGENCY ROOM", insurance: "Medicaid", language: "ENGLISH", marital_status: "MARRIED", race: "WHITE", hospital_expire_flag: "0" },
   ],
   diagnoses_icd: [
     { subject_id: "10000032", hadm_id: "1", seq_num: "1", icd_code: "5715", icd_version: "9" },
@@ -39,6 +39,25 @@ const tables = {
     { subject_id: "10000032", itemid: "220045", charttime: "2180-07-25 08:00:00", valuenum: "91", valueuom: "bpm" },
     { subject_id: "10000032", itemid: "220179", charttime: "2180-07-25 08:00:00", valuenum: "102", valueuom: "mmHg" },
     { subject_id: "10000032", itemid: "220180", charttime: "2180-07-25 08:00:00", valuenum: "61", valueuom: "mmHg" },
+    { subject_id: "10000032", itemid: "220739", charttime: "2180-07-25 08:00:00", value: "Spontaneously", valuenum: "4", valueuom: "" },
+    { subject_id: "10000032", itemid: "223900", charttime: "2180-07-25 08:00:00", value: "Oriented", valuenum: "5", valueuom: "" },
+    { subject_id: "10000032", itemid: "223901", charttime: "2180-07-25 08:00:00", value: "Obeys Commands", valuenum: "6", valueuom: "" },
+    { subject_id: "10000032", itemid: "223758", charttime: "2180-07-24 08:00:00", value: "Full code", valuenum: "", valueuom: "" },
+    { subject_id: "10000032", itemid: "223758", charttime: "2180-07-25 08:00:00", value: "DNR / DNI", valuenum: "", valueuom: "" },
+  ],
+  d_items: [{ itemid: "225752", label: "Arterial Line", category: "Access Lines - Invasive" }, { itemid: "225459", label: "Chest X-Ray", category: "5-Imaging" }],
+  procedureevents: [
+    { subject_id: "10000032", hadm_id: "2", itemid: "225752", starttime: "2180-07-23 16:00:00", endtime: "2180-07-25 17:00:00", location: "Left Radial" },
+    { subject_id: "10000032", hadm_id: "2", itemid: "225459", starttime: "2180-07-23 16:00:00", endtime: "2180-07-23 16:01:00", location: "" },
+  ],
+  microbiologyevents: [
+    { subject_id: "10000032", hadm_id: "2", chartdate: "2180-07-24 00:00:00", spec_type_desc: "BLOOD CULTURE", org_name: "STAPH AUREUS COAG +" },
+    { subject_id: "10000032", hadm_id: "2", chartdate: "2180-07-24 00:00:00", spec_type_desc: "URINE", org_name: "" },
+  ],
+  transfers: [
+    { subject_id: "10000032", hadm_id: "2", careunit: "Emergency Department", intime: "2180-07-23 10:00:00" },
+    { subject_id: "10000032", hadm_id: "2", careunit: "Medical Intensive Care Unit (MICU)", intime: "2180-07-23 14:00:00" },
+    { subject_id: "10000032", hadm_id: "2", careunit: "Discharge Lounge", intime: "2180-07-25 16:00:00" },
   ],
   omr: [{ subject_id: "10000032", chartdate: "2180-06-01", result_name: "Weight (Lbs)", result_value: "94" }],
 };
@@ -56,8 +75,24 @@ test("turns a MIMIC stay into a chart the app can use, ending today", () => {
   expect(s.vitals).toContainEqual({ name: "Blood Pressure", value: "102/61 mmHg", date: "2026-10-13" });
   expect(s.vitals).toContainEqual({ name: "Weight (Lbs)", value: "94", date: "2026-08-20" });
   expect(s.medications).toEqual([{ name: "Furosemide", dosage: "40 mg PO", status: "active" }]); // albumin stopped earlier
-  expect(s.procedures).toEqual([{ name: "Percutaneous abdominal drainage", date: "2026-10-12" }]);
-  expect(s.coverage).toEqual([{ payer: "Medicaid", memberId: null }]);
+  expect(s.procedures).toContainEqual({ name: "Percutaneous abdominal drainage", date: "2026-10-12" });
+  expect(s.coverage).toEqual([{ payer: "Medicaid", memberId: "MED70001184" }]);
+  expect(s.patient).toMatchObject({ maritalStatus: "Married", race: "White", emergencyContact: "Miguel Brown (Spouse) 909-555-0224" });
+  expect(s.patient.primaryCareProvider).toMatch(/^Dr\. /);
+  expect(s.vitals).toContainEqual({ name: "GCS Total", value: "15 points", date: "2026-10-13" });
+  expect(s.assessments).toEqual([{ name: "Code Status", value: "DNR / DNI", date: "2026-10-13" }]);
+  expect(s.labs).toContainEqual({ name: "Blood Culture culture", value: "STAPH AUREUS COAG +", flag: "Positive", date: "2026-10-12" });
+  expect(s.procedures).toContainEqual({ name: "Arterial Line, Left Radial (in place)", date: "2026-10-11" });
+  expect(s.encounters[0]).toMatchObject({ location: "Medical Intensive Care Unit (MICU)", admitSource: "Emergency Room" });
   expect(s.allergies).toEqual([]);
   expect(s.missing).toContain("allergies (not in MIMIC)");
+});
+
+test("demo patients load with their stay ending yesterday", async () => {
+  const { MIMIC_PATIENTS, getMimicRecord } = await import("@/lib/mimic");
+  expect(MIMIC_PATIENTS).toHaveLength(100);
+  const s = summarize(getMimicRecord(MIMIC_PATIENTS[0].id));
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const newest = s.labs.map((l) => l.date!).sort().at(-1)!;
+  expect(newest <= yesterday && newest >= "2026-01-01").toBe(true);
 });

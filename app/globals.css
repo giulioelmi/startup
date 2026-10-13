@@ -15,6 +15,8 @@
   .btn-light { @apply inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40; }
   .input { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-600 focus:ring-2 focus:ring-teal-100 focus:outline-none; }
   .label { @apply mb-1 block text-xs font-semibold tracking-wide text-slate-500 uppercase; }
+  /* Mark required fields: a label right before a required input. */
+  .label:has(+ :is(input, textarea, select):required)::after { content: " *"; @apply text-rose-600; }
   .eyebrow { @apply text-xs font-semibold tracking-wider text-teal-700 uppercase; }
   h1 { @apply text-2xl font-bold tracking-tight text-slate-900; }
   h2 { @apply text-base font-semibold text-slate-900; }

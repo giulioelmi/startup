@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { uploadForm } from "@/app/actions";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { Form } from "@/components/Form";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Pill } from "@/components/ui";
 import { listForms, type FormField } from "@/lib/forms";
@@ -26,8 +27,8 @@ export default async function FormsPage() {
         </p>
       </div>
 
-      <form action={uploadForm} className="card grid grid-cols-4 items-end gap-3">
-        <div className="col-span-2">
+      <Form action={uploadForm} className="card grid items-end gap-3 md:grid-cols-4">
+        <div className="md:col-span-2">
           <label className="label">PDF, scan or photo of a form</label>
           <input type="file" name="file" accept="application/pdf,image/png,image/jpeg" required className="text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:font-medium" />
         </div>
@@ -39,9 +40,9 @@ export default async function FormsPage() {
           </select>
         </div>
         <SubmitButton busy="Uploading…">Upload form</SubmitButton>
-      </form>
+      </Form>
 
-      <div className="card overflow-hidden p-0">
+      <div className="card overflow-x-auto p-0">
         {forms.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No forms yet.</p>}
         {forms.length > 0 && (
           <table className="w-full text-sm">

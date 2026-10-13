@@ -215,7 +215,16 @@ export async function renderFilled(pdf: Uint8Array, fields: FormField[], values:
       continue;
     }
     const field = form.getField(f.name);
-    if (field instanceof PDFTextField) field.setText(value);
+    if (field instanceof PDFTextField) {
+      field.setText(value);
+      // The form's own font size is often fixed (long values overflow) or "auto" (tiny); pick one that fits the box.
+      const r = field.acroField.getWidgets()[0]?.getRectangle();
+      if (r && value) {
+        const { size, lines } = fitText(value, font, r.width - 4, r.height - 2);
+        if (lines.length > 1) field.enableMultiline();
+        field.setFontSize(size);
+      }
+    }
     else if (field instanceof PDFCheckBox) {
       if (value === "true") field.check();
       else field.uncheck();
@@ -241,16 +250,21 @@ function drawInBox(page: Page, f: FormField, value: string, font: Font) {
     if (value === "true") page.drawText("X", { x: x + 1, y: top - height + 1, size: Math.min(height, 12), font });
     return;
   }
-  // Wrap to the box width, shrinking the font until it fits; text sits on the bottom of the box (the form's line).
-  for (let size = Math.min(10, height - 2); size >= 5; size--) {
-    const lines = wrap(value, font, size, width);
-    const lineHeight = size * 1.15;
-    if (lines.length * lineHeight <= height || size === 5) {
-      const firstBaseline = top - height + 3 + (lines.length - 1) * lineHeight;
-      lines.forEach((line, i) => page.drawText(line, { x: x + 2, y: firstBaseline - i * lineHeight, size, font, color: rgb(0, 0, 0.6) }));
-      return;
-    }
+  // Text sits on the bottom of the box (the form's line).
+  const { size, lines } = fitText(value, font, width, height);
+  const lineHeight = size * 1.15;
+  const firstBaseline = top - height + 3 + (lines.length - 1) * lineHeight;
+  lines.forEach((line, i) => page.drawText(line, { x: x + 2, y: firstBaseline - i * lineHeight, size, font, color: rgb(0, 0, 0.6) }));
+}
+
+// Largest font size (10pt down to 5pt) at which the text, wrapped to the box width, fits the box height.
+// Capped at 3/4 of the box height so a single line never touches the box edges.
+export function fitText(text: string, font: Font, width: number, height: number) {
+  for (let size = Math.min(10, height * 0.75); size > 5; size -= 0.5) {
+    const lines = wrap(text, font, size, width);
+    if (lines.length * size * 1.15 <= height) return { size, lines };
   }
+  return { size: 5, lines: wrap(text, font, 5, width) };
 }
 
 function wrap(text: string, font: Font, size: number, width: number): string[] {
