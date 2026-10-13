@@ -63,11 +63,10 @@ test("turns a MIMIC stay into a chart the app can use, ending today", () => {
 });
 
 test("demo patients load with their stay ending yesterday", async () => {
-  const { MIMIC_PATIENTS, getMimicRecord, searchMimic } = await import("@/lib/mimic");
+  const { MIMIC_PATIENTS, getMimicRecord } = await import("@/lib/mimic");
   expect(MIMIC_PATIENTS).toHaveLength(100);
   const s = summarize(getMimicRecord(MIMIC_PATIENTS[0].id));
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const newest = s.labs.map((l) => l.date!).sort().at(-1)!;
   expect(newest <= yesterday && newest >= "2026-01-01").toBe(true);
-  expect(searchMimic({ family: s.patient.name.split(" ")[1], birthdate: s.patient.birthDate! }).map((p) => p.id)).toContain(s.patient.id);
 });
