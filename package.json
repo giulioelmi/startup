@@ -9,7 +9,8 @@
     "lint": "eslint",
     "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/",
     "test": "vitest run",
-    "epic:key": "node scripts/gen-epic-key.mjs"
+    "epic:key": "node scripts/gen-epic-key.mjs",
+    "mimic:import": "node scripts/import-mimic.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.71",

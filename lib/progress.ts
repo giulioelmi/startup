@@ -55,7 +55,7 @@ export async function progress(t: Transfer) {
 
 // Human-readable timeline of what the AI and the staff did on a transfer.
 const LABELS: Record<string, string> = {
-  "transfer.create": "Chart pulled from Epic",
+  "transfer.create": "Chart pulled from the EHR",
   "transfer.rank": "AI ranked the receiving hospitals",
   "transfer.choose": "Hospitals chosen, in order",
   "transfer.next": "Moved on to the next hospital",

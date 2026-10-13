@@ -4,13 +4,13 @@ AI assistant for small community hospitals that need to transfer patients to a h
 It reads the patient's chart from the EHR, picks the best receiving hospital, fills that hospital's
 transfer forms, **calls the transfer center and answers its questions**, and faxes the packet.
 
-Prototype scope: Epic FHIR **sandbox** patients only; receiving hospitals **UCLA Health, Keck Medicine of USC, Cedars-Sinai, UC San Diego Health, UCI Health, Loma Linda, Sharp Memorial, Children's Hospital LA**.
+Prototype scope: Epic FHIR **sandbox** patients and **MIMIC-IV demo** patients (no real patients); receiving hospitals **UCLA Health, Keck Medicine of USC, Cedars-Sinai, UC San Diego Health, UCI Health, Loma Linda, Sharp Memorial, Children's Hospital LA**.
 
 ## What works
 
 | Step | How |
 |---|---|
-| Patient chart | Live from Epic's FHIR R4 sandbox (Backend Services OAuth). Search by name or pick a sandbox test patient. |
+| Patient chart | Live from Epic's FHIR R4 sandbox (Backend Services OAuth), or from the built-in **MIMIC-IV demo** patients: real de-identified ICU stays with made-up names, so there's a full chart (labs, vitals, meds, diagnoses) to demo with. Search by name or pick a patient. |
 | Facilities | Each receiving hospital has a page (**Facilities**) with its contact details, services, forms and its **workflow**: the steps a transfer to it goes through, built from five actions (call them, wait for their call, receive their forms, fill & approve forms, fax the packet). UCLA, Keck and Cedars come built in with workflows from their public transfer-center pages; staff can edit them or add a new facility. A transfer copies the chosen facility's workflow, and each step completes itself when the call/fax/forms happen (or staff mark it done). Public form links (e.g. Cedars' Non-EMTALA request form) are downloaded into the forms inbox when the facility is first chosen. |
 | Hospital choice | AI decides which capabilities the patient needs (cath lab, stroke, transplant…); hospitals lacking one drop down, then closest first. AI explains each option using only our hospital profiles. **No bed-availability guesses.** |
 | Forms | **Fully automatic.** Forms arrive by **upload**, **email** (Postmark inbound) or **fax** (Sinch inbound) and are stored in the database. The AI forms agent reads each one: fillable PDFs give their fields (labelled from the printed text next to them); scans and faxes go to a vision model that finds every blank and which hospital issued the form. It then fills the form for every open transfer to that hospital, citing the chart source of each value and flagging anything "not in record". A nurse only reviews and approves. |
@@ -53,6 +53,14 @@ Phone, fax and email webhooks need a public HTTPS URL. Free option:
 3. `npm run epic:key` → paste `EPIC_PRIVATE_KEY` into `.env`. In Epic, set the **Non-Production JWK Set URL** to `{PUBLIC_URL}/api/jwks` (or upload the printed public key).
 4. Copy the **Non-Production Client ID** into `EPIC_CLIENT_ID`. New Epic apps can take a while to become active in the sandbox.
 
+### 1b. MIMIC-IV demo patients (free, no account)
+The [MIMIC-IV Clinical Database Demo](https://physionet.org/content/mimic-iv-demo/2.2/) has 100 ICU patients (open access, ODbL license). To load them:
+```bash
+wget -r -N -c -np https://physionet.org/files/mimic-iv-demo/2.2/
+npm run mimic:import -- physionet.org/files/mimic-iv-demo/2.2
+```
+This writes `lib/mimic-demo.json` (commit it so Vercel has it). Each patient's chart is their latest hospital stay, with dates shifted so the stay ends on the import day. Names, addresses and phone numbers are made up. MIMIC has no allergies or clinical notes, so these show as "not returned", never as "none".
+
 ### 2. AI model (free to start)
 Any model works by changing two variables. Reading scanned/faxed forms needs a model that accepts images.
 - Gemini free tier (recommended: good at finding blanks on scans): `LLM_PROVIDER=google`, `LLM_MODEL=gemini-flash-latest`, key from https://aistudio.google.com
@@ -83,7 +91,9 @@ Before the demo: upload one form per hospital in **Forms inbox** (a real PDF, or
 
 ## Code map
 ```
+lib/ehr.ts        where a chart comes from: MIMIC demo ("mimic-…" ids) or Epic
 lib/epic.ts       Epic OAuth + FHIR fetch (swap URLs for Oracle Health/Cerner)
+lib/mimic.ts      MIMIC-IV demo patients (built by scripts/import-mimic.mjs)
 lib/summary.ts    FHIR → compact chart summary (the only patient data the AI sees)
 lib/hospitals.ts  built-in hospital profiles + capabilities
 lib/ranking.ts    capability filter + distance + AI rationale

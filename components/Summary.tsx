@@ -31,7 +31,7 @@ export function Summary({ s }: { s: ClinicalSummary }) {
         <List title="Latest labs" items={s.labs.map((x) => `${x.name}: ${x.value}${x.flag ? ` ${x.flag}` : ""}`)} />
         <List title="Insurance" items={s.coverage.map((x) => `${x.payer}${x.memberId ? ` #${x.memberId}` : ""}`)} />
       </div>
-      {s.missing.length > 0 && <p className="text-xs text-amber-700">Not returned by Epic: {s.missing.join(", ")}</p>}
+      {s.missing.length > 0 && <p className="text-xs text-amber-700">Not returned by the EHR: {s.missing.join(", ")}</p>}
     </div>
   );
 }

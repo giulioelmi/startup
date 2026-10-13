@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { audit, one, run } from "@/lib/db";
-import { getPatientRecord } from "@/lib/epic";
+import { ehrName, getPatientRecord } from "@/lib/ehr";
 import { summarize } from "@/lib/summary";
 import { createTransfer, getTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
@@ -35,7 +35,7 @@ export async function startTransfer(f: FormData) {
     emergent: f.get("emergent") === "on",
   };
   const id = await createTransfer({ patientId, patientName: summary.patient.name, reason: str(f, "reason"), details, summary });
-  await audit("user", "transfer.create", id, "chart snapshot from Epic");
+  await audit("user", "transfer.create", id, `chart snapshot from ${ehrName(patientId)}`);
   await startRanking(id);
   redirect("/");
 }

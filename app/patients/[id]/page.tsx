@@ -2,7 +2,7 @@ import { startTransfer } from "@/app/actions";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
 import { audit } from "@/lib/db";
-import { getPatientRecord } from "@/lib/epic";
+import { ehrName, getPatientRecord } from "@/lib/ehr";
 import { summarize } from "@/lib/summary";
 import { defaultDetails } from "@/lib/transfers";
 
@@ -14,12 +14,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   let summary;
   try {
     summary = summarize(await getPatientRecord(id));
-    await audit("user", "chart.view", null, "Epic patient chart");
+    await audit("user", "chart.view", null, `${ehrName(id)} patient chart`);
   } catch (e) {
     return (
       <div className="card space-y-2 text-rose-700">
-        <p>Could not load patient from Epic: {(e as Error).message}</p>
-        <a href="/epic-check" className="btn-light">Run Epic connection check</a>
+        <p>Could not load patient from {ehrName(id)}: {(e as Error).message}</p>
+        {ehrName(id) === "Epic" && <a href="/epic-check" className="btn-light">Run Epic connection check</a>}
       </div>
     );
   }
