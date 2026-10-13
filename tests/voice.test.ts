@@ -77,3 +77,20 @@ test("stays quiet and keeps listening through hold music", async () => {
   expect(xml).toContain("idle=4");
   expect(xml).not.toContain("<Say");
 });
+
+test("outbound call: listens first, then opens the way this hospital's workflow says", async () => {
+  let res = await POST(twilioRequest(`step=start&transfer=${id}`, { CallSid: "CA2" }));
+  expect(await res.text()).not.toContain("<Say");
+
+  // Nobody spoke at pickup: prompt them once.
+  res = await POST(twilioRequest(`step=turn&transfer=${id}&idle=0`, { CallSid: "CA2" }));
+  expect(await res.text()).toContain("Hello?");
+
+  askForObject.mockClear();
+  askForObject.mockResolvedValueOnce({ say: "Hi, this is an automated A.I. assistant...", pressDigits: "", outcome: "none", outcomeReason: "", endCall: false });
+  res = await POST(twilioRequest(`step=turn&transfer=${id}`, { CallSid: "CA2", SpeechResult: "Transfer center, this is Maria." }));
+  expect(await res.text()).toContain("automated A.I. assistant");
+  const prompt = askForObject.mock.calls[0][2];
+  expect(prompt).toContain("theirWorkflow");
+  expect(prompt).toContain("faxesWeSentThem");
+});

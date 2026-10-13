@@ -58,7 +58,11 @@ export async function POST(req: Request) {
   const t = await getTransfer(transferId);
   if (!t) return hangUp("Sorry, this transfer is no longer available. Goodbye.");
 
-  if (step === "start") return greet(transferId);
+  // Our call was answered: listen first. A person or a phone menu always speaks first, and the model opens to fit.
+  if (step === "start") {
+    await audit("ai-voice", "call.answered", transferId);
+    return xml(speakAndListen(turnUrl(transferId)));
+  }
 
   // step === "turn"
   const heard = params.SpeechResult || (params.Digits ? `(pressed ${params.Digits})` : "");
@@ -66,7 +70,8 @@ export async function POST(req: Request) {
     // Silence or hold music: keep listening, up to ~5 minutes.
     const idle = Number(url.searchParams.get("idle") ?? 0) + 1;
     if (idle > 30) return hangUp("I'll call back later. Goodbye.");
-    return xml(speakAndListen(turnUrl(transferId, idle)));
+    const quietPickup = idle === 1 && (await getTranscript(callSid)).length === 0;
+    return xml(speakAndListen(turnUrl(transferId, idle), quietPickup ? "Hello?" : undefined));
   }
 
   const history = await getTranscript(callSid);

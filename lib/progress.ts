@@ -64,6 +64,7 @@ const LABELS: Record<string, string> = {
   "form.edit": "Form edited by staff",
   "form.approve": "Form reviewed and approved",
   "call.start": "Call placed to transfer center",
+  "call.answered": "Transfer center picked up",
   "call.greet": "AI presented the transfer request",
   "transfer.accepted": "Transfer ACCEPTED on the call",
   "transfer.declined": "Transfer declined on the call",

@@ -1,8 +1,9 @@
 import twilio from "twilio";
 import { z } from "zod";
-import { one, run } from "./db";
+import { all, one, run } from "./db";
 import { askForObject } from "./llm";
 import { getHospital } from "./hospitals";
+import { progress } from "./progress";
 import type { Transfer } from "./transfers";
 
 // Real phone calls through Twilio: their speech recognition turns what the
@@ -40,7 +41,8 @@ export async function addLine(callSid: string, who: Line["who"], text: string) {
   await run("UPDATE calls SET transcript = $1 WHERE call_sid = $2", [JSON.stringify(lines), callSid]);
 }
 
-// What the AI says first, without waiting on the model. Discloses it is an AI.
+// What the AI says first when a hospital calls us back, without waiting on the model. Discloses it is an AI.
+// Our own calls start by listening instead: the model opens once it hears who picked up (see `answer`).
 export function openingLine(t: Transfer) {
   const p = t.summary.patient;
   const d = t.details;
@@ -64,6 +66,8 @@ export type Reply = {
 
 export async function answer(t: Transfer, history: Line[], heard: string): Promise<Reply> {
   const hospital = await getHospital(t.hospitalId);
+  const { steps, workflow } = await progress(t);
+  const faxesSent = await all("SELECT to_number, status, created_at FROM faxes WHERE transfer_id = $1 AND created_at >= $2", [t.id, t.hospitalSince ?? ""]);
   return askForObject(
     z.object({
       say: z.string(),
@@ -75,8 +79,9 @@ export async function answer(t: Transfer, history: Line[], heard: string): Promi
     `You are an A.I. assistant on a live phone call with a hospital transfer center, requesting a patient transfer on behalf of a referring physician.
 Rules:
 - Answer ONLY from the chart and transfer details below. Never guess. If something is not there, say you don't have it and give the physician callback number.
+- Opening (nothing said yet by you): wait for a person. Then, in 2-3 sentences, say you are an automated A.I. assistant calling for the referring physician at the sending hospital, and make the request the way THIS hospital's workflow and intake notes expect. E.g. if their workflow says we fax first, say the request was faxed (when, to which number) and give the reference number; if it is physician-to-physician, ask to be connected to the accepting physician. Don't recite the chart; let them ask.
 - Speak naturally and briefly (1-3 sentences). Say numbers and units in words a listener understands ("potassium three point nine").
-- If you hear a phone menu, set pressDigits to the option for transfers / transfer center / physicians; say nothing.
+- If you hear a phone menu, set pressDigits to the option the workflow notes name, else the one for transfers / transfer center / physicians; say nothing.
 - If you hear hold music, a recorded announcement, or nothing meaningful, say nothing ("").
 - If they accept the transfer, set outcome "accepted" (outcomeReason: bed/unit/accepting physician if given). If they decline, outcome "declined" with their reason.
 - If they ask for records, say they will be faxed to the number they give (repeat it back).
@@ -84,6 +89,9 @@ Rules:
     JSON.stringify({
       receivingHospital: hospital?.name,
       howTheyTakeTransfers: hospital?.intakeNotes,
+      theirWorkflow: workflow.map((s, i) => ({ step: s.type, note: s.note, done: steps.find((x) => x.index === i)?.done })),
+      faxesWeSentThem: faxesSent,
+      referenceNumber: t.id,
       reasonForTransfer: t.reason,
       transfer: t.details,
       chart: t.summary,
