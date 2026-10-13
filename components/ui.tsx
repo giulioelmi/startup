@@ -26,12 +26,12 @@ export function Spinner({ className = "h-4 w-4" }: { className?: string }) {
 
 export const STATUS_TONE = { open: "blue", accepted: "green", declined: "red", cancelled: "gray" } as const;
 
-export type Step = { id: string; title: string; done: boolean };
+export type Step = { id: string; title: string; done: boolean; skipped?: boolean };
 
 // Horizontal progress through the transfer. Each step links to its view.
 export function Stepper({ steps, current, href }: { steps: Step[]; current: string; href: (id: string) => string }) {
   return (
-    <ol className="flex w-full items-center">
+    <ol className="flex w-full min-w-max items-center">
       {steps.map((s, i) => {
         const active = s.id === current;
         return (
@@ -42,7 +42,7 @@ export function Stepper({ steps, current, href }: { steps: Step[]; current: stri
                   s.done ? "bg-teal-700 text-white ring-teal-700" : active ? "bg-white text-teal-700 ring-teal-700" : "bg-white text-slate-400 ring-slate-300"
                 }`}
               >
-                {s.done ? "✓" : i + 1}
+                {s.skipped ? "–" : s.done ? "✓" : i + 1}
               </span>
               <span className={`text-sm font-semibold whitespace-nowrap ${active ? "text-teal-800" : s.done ? "text-slate-700" : "text-slate-400"} group-hover:text-teal-700`}>
                 {s.title}

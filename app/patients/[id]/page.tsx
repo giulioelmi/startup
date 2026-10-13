@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { startTransfer } from "@/app/actions";
+import { Form } from "@/components/Form";
 import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
 import { audit } from "@/lib/db";
@@ -17,9 +19,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     await audit("user", "chart.view", null, `${ehrName(id)} patient chart`);
   } catch (e) {
     return (
-      <div className="card space-y-2 text-rose-700">
-        <p>Could not load patient from {ehrName(id)}: {(e as Error).message}</p>
-        {ehrName(id) === "Epic" && <a href="/epic-check" className="btn-light">Run Epic connection check</a>}
+      <div className="card space-y-3">
+        <p className="text-rose-700">Could not load this patient from {ehrName(id)}: {(e as Error).message}</p>
+        <div className="flex gap-2">
+          <Link href="/patients" className="btn">← Back to patients</Link>
+          {ehrName(id) === "Epic" && <Link href="/epic-check" className="btn-light">Run Epic connection check</Link>}
+        </div>
       </div>
     );
   }
@@ -33,7 +38,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-12">
-      <form action={startTransfer} className="card space-y-4 self-start lg:col-span-5">
+      <Form action={startTransfer} className="card space-y-4 self-start lg:col-span-5">
         <div>
           <p className="eyebrow">New transfer</p>
           <h1 className="mt-1">{summary.patient.name}</h1>
@@ -43,7 +48,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           <label className="label">Reason for transfer</label>
           <textarea name="reason" required rows={3} className="input" placeholder="e.g. NSTEMI with rising troponin, needs cardiac cath not available here" />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-2">
           {field("referringPhysician", "Referring physician", true)}
           {field("callbackPhone", "Physician callback", true)}
           {field("levelOfCare", "Level of care", true)}
@@ -54,7 +59,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         <input type="hidden" name="sendingPhone" value={d.sendingPhone} />
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="emergent" /> Emergent (EMTALA)</label>
         <SubmitButton busy="Starting transfer…">Start transfer →</SubmitButton>
-      </form>
+      </Form>
       <div className="lg:col-span-7">
         <Summary s={summary} />
       </div>

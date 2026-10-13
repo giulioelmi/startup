@@ -17,6 +17,9 @@ export const isMimic = (id: string) => id.startsWith("mimic-");
 export const MIMIC_PATIENTS = records.map((r, i) => ({
   id: patients[i].id as string,
   name: patients[i].name[0].text as string,
+  mrn: patients[i].identifier?.[0]?.value as string | undefined,
+  birthDate: patients[i].birthDate as string,
+  sex: patients[i].gender as string,
   diagnosis: (r.resources.diagnoses[0] as any)?.code.text as string | undefined,
 }));
 

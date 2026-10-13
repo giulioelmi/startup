@@ -1,7 +1,9 @@
 import { expect, test, vi } from "vitest";
 import { PDFDocument } from "pdf-lib";
-import { applyTo, downloadForms, recordOutcome } from "@/lib/agent";
+import { applyTo, downloadForms, nextChoice, recordOutcome } from "@/lib/agent";
 import { audit, run } from "@/lib/db";
+import { whyNotFax } from "@/lib/fax";
+import type { Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
 import { deleteHospital, getHospital, HOSPITALS, listHospitals, matchHospitalByPhone, saveHospital } from "@/lib/hospitals";
 import { progress } from "@/lib/progress";
@@ -69,7 +71,30 @@ test("the nurse's hospitals are applied to in order: a decline moves on to the n
   expect((await progress(t)).steps.every((s) => s.done === ["Chart", "Hospital"].includes(s.title))).toBe(true); // Keck's fax doesn't count for UCLA
 
   expect(await recordOutcome(id, "declined", "No neurosurgery", "user")).toBeNull();
-  expect(await getTransfer(id)).toMatchObject({ hospitalId: "ucla", status: "declined", outcomeReason: "No neurosurgery" });
+  expect(await getTransfer(id)).toMatchObject({
+    hospitalId: "ucla",
+    status: "declined",
+    outcomeReason: "No neurosurgery",
+    declines: [{ hospitalId: "keck", reason: "No ICU beds" }, { hospitalId: "ucla", reason: "No neurosurgery" }],
+  });
+});
+
+test("the next hospital skips ones that declined or were deleted", async () => {
+  const id = await createTransfer({ patientId: "eTest123", patientName: "Camila Maria Lopez", reason: "NSTEMI", details: defaultDetails(), summary: summarize(record) });
+  await updateTransfer(id, { choices: ["keck", "gone", "ucla"], declines: [{ hospitalId: "keck", reason: "No beds" }] });
+  expect(await nextChoice((await getTransfer(id))!)).toBe("ucla");
+});
+
+test("the fax waits for approved forms unless the forms step is marked done", async () => {
+  const id = await createTransfer({ patientId: "eTest123", patientName: "Camila Maria Lopez", reason: "NSTEMI", details: defaultDetails(), summary: summarize(record) });
+  await updateTransfer(id, { hospitalId: "cedars", workflow: (await getHospital("cedars"))!.workflow }); // forms first
+  const t = async () => (await getTransfer(id))!;
+  const form = (approvedAt: string | null) => ({ approvedAt }) as Filled;
+  expect(whyNotFax(await t(), [])).toMatch(/No forms/);
+  expect(whyNotFax(await t(), [form(null)])).toMatch(/Approve/);
+  expect(whyNotFax(await t(), [form("2026-10-13")])).toBeNull();
+  await updateTransfer(id, { skipped: [0] });
+  expect(whyNotFax(await t(), [form(null)])).toBeNull();
 });
 
 test("a facility's public forms are downloaded once into the forms inbox", async () => {
