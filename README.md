@@ -76,7 +76,7 @@ Any model works by changing two variables. Reading scanned/faxed forms needs a m
 ### 3b. ElevenLabs voice agent (optional, ~$0.08/min more)
 Same calls, but speech streams both ways: replies in under a second, and the nurse can interrupt. Twilio still carries the call.
 1. Get an API key at elevenlabs.io and add `ELEVENLABS_API_KEY` in Vercel (optional: `ELEVENLABS_LLM`, `ELEVENLABS_VOICE_ID`). Redeploy.
-2. Open **Voice agent** in the app and press **Create the agent**. It creates the agent, its tools and the transcript webhook, moves your Twilio number to it, and saves the IDs in the database. Calls use it right away.
+2. Open `{PUBLIC_URL}/voice` in the app (not in the menu) and press **Create the agent**. It creates the agent, its tools and the transcript webhook, moves your Twilio number to it, and saves the IDs in the database. Calls use it right away.
 3. ElevenLabs now answers calls to the number too. To go back to Twilio turn-by-turn, remove `ELEVENLABS_API_KEY` and re-set the number's webhook from step 3.
 
 Each call gets its own brief (`lib/call-brief.ts`): the hospital's intake notes and workflow (what's done, what we faxed), the services the patient needs and why this hospital was picked, and the chart. A shared playbook covers phone menus, hold, voicemail, no beds, physician-to-physician, records requests, accept and decline. The agent reports through `record_result`: accepted/declined move the transfer on; follow-ups show up in the activity log. The transcript arrives when the call ends.
