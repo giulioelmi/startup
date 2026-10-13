@@ -59,7 +59,7 @@ The [MIMIC-IV Clinical Database Demo](https://physionet.org/content/mimic-iv-dem
 wget -r -N -c -np https://physionet.org/files/mimic-iv-demo/2.2/
 npm run mimic:import -- physionet.org/files/mimic-iv-demo/2.2
 ```
-This writes `lib/mimic-demo.json` (commit it so Vercel has it). Each patient's chart is their latest hospital stay, with dates shifted so the stay ends on the import day. Names, addresses and phone numbers are made up. MIMIC has no allergies or clinical notes, so these show as "not returned", never as "none".
+This writes `lib/mimic-demo.json` (commit it so Vercel has it). Each patient's chart is their latest hospital stay, with dates shifted so the stay ended yesterday (whenever you look). Names, addresses and phone numbers are made up. MIMIC has no allergies or clinical notes, so these show as "not returned", never as "none".
 
 ### 2. AI model (free to start)
 Any model works by changing two variables. Reading scanned/faxed forms needs a model that accepts images.
