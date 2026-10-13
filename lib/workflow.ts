@@ -8,7 +8,5 @@ export const STEP_TYPES = {
 } as const;
 export type StepType = keyof typeof STEP_TYPES;
 
-export const STEP_ICONS: Record<StepType, string> = { call: "📞", wait_for_call: "📲", receive_forms: "📥", fill_forms: "✍️", send_fax: "📠" };
-
 // `number` overrides the facility's transfer phone (call) or fax (send_fax) for this step.
 export type WorkflowStep = { type: StepType; note: string; number?: string };
