@@ -6,7 +6,8 @@
 //
 // Each patient becomes a chart in the same FHIR shape lib/epic.ts returns, taken at the
 // end of their latest hospital stay (as if they were being transferred out right now).
-// MIMIC has no names, addresses, contacts, member IDs or PCPs, so those are made up; dates are shifted so the stay ends today.
+// MIMIC has no names, addresses, contacts, member IDs or PCPs, so those are made up. Dates are stored
+// as if every stay ended on 2000-01-01; lib/mimic.ts moves them so it ended yesterday.
 // MIMIC has no allergies or notes: they are listed as missing, never as "none".
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -93,7 +94,7 @@ const group = (rows, key) => {
 };
 
 // t: MIMIC tables as arrays of row objects (column names as in the CSVs).
-export function buildRecords(t, now = new Date()) {
+export function buildRecords(t, now = new Date("2000-01-01T12:00:00Z")) {
   const icd = new Map(t.d_icd_diagnoses.map((d) => [`${d.icd_version}/${d.icd_code}`, d.long_title]));
   const icdProc = new Map(t.d_icd_procedures.map((d) => [`${d.icd_version}/${d.icd_code}`, d.long_title]));
   const labItems = new Map(t.d_labitems.map((d) => [d.itemid, d]));
@@ -129,7 +130,10 @@ export function buildRecords(t, now = new Date()) {
     const title = (d) => icd.get(`${d.icd_version}/${d.icd_code}`) ?? `ICD-${d.icd_version} ${d.icd_code}`;
     const current = diagnoses.filter((d) => d.hadm_id === stay.hadm_id).sort((a, b) => a.seq_num - b.seq_num);
     const earlierStays = new Map(stays.filter((a) => time(a.admittime) < from).map((a) => [a.hadm_id, a.admittime]));
-    const history = latestBy(diagnoses.filter((d) => earlierStays.has(d.hadm_id)), title, (d) => -time(earlierStays.get(d.hadm_id)));
+    // Problem list: diagnoses from earlier stays, newest 30.
+    const history = latestBy(diagnoses.filter((d) => earlierStays.has(d.hadm_id)), title, (d) => -time(earlierStays.get(d.hadm_id)))
+      .sort((a, b) => time(earlierStays.get(b.hadm_id)) - time(earlierStays.get(a.hadm_id)))
+      .slice(0, 30);
 
     const vitalRows = by.chartevents(p.subject_id).filter((c) => during(c.charttime) && c.valuenum !== "");
     const sys = vitalRows.filter((c) => c.itemid === BP.sys);

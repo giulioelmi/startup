@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { moveInWorklist, removeTransfer } from "@/app/actions";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { SubmitButton } from "@/components/SubmitButton";
 import { MiniProgress, Pill, Spinner, STATUS_TONE } from "@/components/ui";
 import { one } from "@/lib/db";
 import { listHospitals } from "@/lib/hospitals";
@@ -55,10 +57,11 @@ export default async function Dashboard() {
                 <th>Receiving hospital</th>
                 <th>Progress</th>
                 <th>Status</th>
+                <th></th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {transfers.map((t) => (
+              {transfers.map((t, i) => (
                 <tr key={t.id} className="hover:bg-slate-50">
                   <td className="px-5 py-3">
                     <Link className="font-semibold text-slate-900 hover:text-teal-700" href={`/transfers/${t.id}`}>{t.patientName}</Link>
@@ -76,6 +79,19 @@ export default async function Dashboard() {
                   </td>
                   <td><MiniProgress steps={progresses.get(t.id)!} /></td>
                   <td><Pill tone={STATUS_TONE[t.status]}>{t.status}</Pill></td>
+                  <td className="pr-3">
+                    <div className="flex justify-end gap-1 text-slate-400">
+                      <form action={moveInWorklist.bind(null, t.id, -1)}>
+                        <SubmitButton className="px-1 hover:text-slate-900 disabled:opacity-30" disabled={i === 0} busy="…" title="Move up">↑</SubmitButton>
+                      </form>
+                      <form action={moveInWorklist.bind(null, t.id, 1)}>
+                        <SubmitButton className="px-1 hover:text-slate-900 disabled:opacity-30" disabled={i === transfers.length - 1} busy="…" title="Move down">↓</SubmitButton>
+                      </form>
+                      <form action={removeTransfer.bind(null, t.id)}>
+                        <SubmitButton className="px-1 hover:text-rose-600" busy="…" title="Delete" confirm={`Delete the transfer for ${t.patientName}?`}>✕</SubmitButton>
+                      </form>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
