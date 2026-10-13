@@ -15,6 +15,7 @@ import { approve, getFilled, getFilledPdf, listFilled, saveValues } from "@/lib/
 import { applyTo, downloadForms, fillOpenTransfersFor, processForm, queueFill, recordOutcome, runFills } from "@/lib/agent";
 import { buildPacket, sendFax } from "@/lib/fax";
 import { startCall } from "@/lib/voice";
+import { elevenLabsEnabled, startAgentCall } from "@/lib/elevenlabs";
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
@@ -131,7 +132,8 @@ export async function faxPacket(transferId: number, f: FormData) {
 // ---------- Calls ----------
 
 export async function callTransferCenter(transferId: number, f: FormData) {
-  await startCall(transferId, str(f, "to"));
+  if (elevenLabsEnabled()) await startAgentCall((await getTransfer(transferId))!, str(f, "to"));
+  else await startCall(transferId, str(f, "to"));
   await audit("user", "call.start", transferId);
   redirect(`/transfers/${transferId}?step=${str(f, "step")}`);
 }

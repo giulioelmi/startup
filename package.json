@@ -10,6 +10,7 @@
     "postinstall": "mkdir -p public && cp node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs public/",
     "test": "vitest run",
     "epic:key": "node scripts/gen-epic-key.mjs",
+    "elevenlabs:setup": "node --env-file-if-exists=.env.local --env-file-if-exists=.env scripts/elevenlabs-setup.mjs",
     "mimic:import": "node scripts/import-mimic.mjs"
   },
   "dependencies": {
