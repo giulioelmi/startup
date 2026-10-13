@@ -28,6 +28,7 @@ export function Summary({ s }: { s: ClinicalSummary }) {
         <List title="Allergies" items={s.allergies.map((x) => `${x.substance}${x.reaction ? `: ${x.reaction}` : ""}`)} />
         <List title="Medications" items={s.medications.map((x) => `${x.name}${x.dosage ? ` – ${x.dosage}` : ""}`)} />
         <List title="Latest vitals" items={s.vitals.map((x) => `${x.name}: ${x.value} (${x.date ?? ""})`)} />
+        <List title="Status (code, isolation, O2, mental status)" items={(s.assessments ?? []).map((x) => `${x.name}: ${x.value}`)} />
         <List title="Latest labs" items={s.labs.map((x) => `${x.name}: ${x.value}${x.flag ? ` ${x.flag}` : ""}`)} />
         <List title="Insurance" items={s.coverage.map((x) => `${x.payer}${x.memberId ? ` #${x.memberId}` : ""}`)} />
       </div>
