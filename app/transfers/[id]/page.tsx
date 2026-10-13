@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { Summary } from "@/components/Summary";
 import { Pill, Spinner, STATUS_TONE, Stepper } from "@/components/ui";
 import { all } from "@/lib/db";
+import { ehrName } from "@/lib/ehr";
 import { listFilled, type Filled } from "@/lib/filled";
 import { listForms } from "@/lib/forms";
 import { CAPABILITIES, listHospitals, type Hospital } from "@/lib/hospitals";
@@ -151,7 +152,7 @@ function ChartStep({ t }: { t: Transfer }) {
   ] as const;
   return (
     <>
-      <StepTitle n={1} title="Chart pulled from Epic">
+      <StepTitle n={1} title={`Chart pulled from ${ehrName(t.patientId)}`}>
         The AI works only from this snapshot of the chart, taken {t.createdAt} UTC. Every answer it gives can be traced back to it.
       </StepTitle>
       <div className="grid grid-cols-4 gap-2">
@@ -162,7 +163,7 @@ function ChartStep({ t }: { t: Transfer }) {
           </div>
         ))}
       </div>
-      {s.missing.length > 0 && <p className="text-xs text-amber-700">Epic did not return: {s.missing.join(", ")}</p>}
+      {s.missing.length > 0 && <p className="text-xs text-amber-700">{ehrName(t.patientId)} did not return: {s.missing.join(", ")}</p>}
       <Link href={`/transfers/${t.id}?step=hospital`} className="btn">Next: choose hospital →</Link>
     </>
   );
@@ -457,7 +458,7 @@ function Document({ t, view, ws, hospital, hospitals, filled, calls, faxes, even
     </section>
   );
 
-  if (view === "chart") return frame("Epic chart summary", `Snapshot ${t.createdAt} UTC`, <Summary s={t.summary} />);
+  if (view === "chart") return frame(`${ehrName(t.patientId)} chart summary`, `Snapshot ${t.createdAt} UTC`, <Summary s={t.summary} />);
 
   if (view === "hospital") {
     const h = hospitals.find((x) => x.id === (doc ?? t.hospitalId ?? t.ranking?.hospitals[0]?.hospitalId));
