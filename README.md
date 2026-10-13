@@ -75,9 +75,9 @@ Any model works by changing two variables. Reading scanned/faxed forms needs a m
 
 ### 3b. ElevenLabs voice agent (optional, ~$0.08/min more)
 Same calls, but speech streams both ways: replies in under a second, and the nurse can interrupt. Twilio still carries the call.
-1. Get an API key at elevenlabs.io → `ELEVENLABS_API_KEY` (plus the Twilio vars and `PUBLIC_URL`, `WEBHOOK_TOKEN`).
-2. `npm run elevenlabs:setup` creates the agent, its tools and the transcript webhook, and imports your Twilio number. Paste the three lines it prints into `.env` (and Vercel).
-3. From then on, "Call" uses the agent, and ElevenLabs answers calls to the number. Remove the `ELEVENLABS_*` vars to go back to Twilio turn-by-turn (and re-set the number's webhook from step 3).
+1. Get an API key at elevenlabs.io and add `ELEVENLABS_API_KEY` in Vercel (optional: `ELEVENLABS_LLM`, `ELEVENLABS_VOICE_ID`). Redeploy.
+2. Open **Voice agent** in the app and press **Create the agent**. It creates the agent, its tools and the transcript webhook, moves your Twilio number to it, and saves the IDs in the database. Calls use it right away.
+3. ElevenLabs now answers calls to the number too. To go back to Twilio turn-by-turn, remove `ELEVENLABS_API_KEY` and re-set the number's webhook from step 3.
 
 Each call gets its own brief (`lib/call-brief.ts`): the hospital's intake notes and workflow (what's done, what we faxed), the services the patient needs and why this hospital was picked, and the chart. A shared playbook covers phone menus, hold, voicemail, no beds, physician-to-physician, records requests, accept and decline. The agent reports through `record_result`: accepted/declined move the transfer on; follow-ups show up in the activity log. The transcript arrives when the call ends.
 
@@ -110,7 +110,7 @@ lib/forms.ts      find fields (PDF fields or AI vision on scans), AI fill, write
 lib/pdf-pages.ts  PDF pages -> images / text positions
 lib/call-brief.ts what the AI knows going into a call + the playbook (both voice engines)
 lib/voice.ts      Twilio calls + AI answers
-lib/elevenlabs.ts ElevenLabs agent calls (used when ELEVENLABS_* is set; scripts/elevenlabs-setup.mjs)
+lib/elevenlabs.ts ElevenLabs agent calls (lib/elevenlabs-setup.ts creates the agent from the Voice agent page)
 lib/fax.ts        fax packet + mock/Sinch sending
 lib/llm.ts        model-agnostic AI (env-selected provider)
 lib/db.ts         Postgres (Neon on Vercel, embedded PGlite locally) + audit log

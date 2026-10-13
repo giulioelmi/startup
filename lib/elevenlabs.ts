@@ -1,22 +1,33 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { run } from "./db";
+import { one, run } from "./db";
 import { callContext, PLAYBOOK } from "./call-brief";
 import { openingLine, type Line } from "./voice";
 import type { Transfer } from "./transfers";
 
 // Calls through an ElevenLabs agent instead of Twilio turn-by-turn: speech streams both ways, so replies
-// come in under a second and the transfer center can interrupt. Used whenever the ELEVENLABS_* variables are set;
-// create the agent once with `npm run elevenlabs:setup`.
+// come in under a second and the transfer center can interrupt. Used once ELEVENLABS_API_KEY is set and the agent
+// exists (created from the Voice agent page, lib/elevenlabs-setup.ts).
 // Each call gets its own brief (lib/call-brief.ts); the agent reports back through tools (app/api/voice/elevenlabs).
 
-const API = "https://api.elevenlabs.io/v1";
+export type AgentConfig = { agentId: string; phoneNumberId: string; webhookSecret: string };
 
-export const elevenLabsEnabled = () =>
-  !!(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_AGENT_ID && process.env.ELEVENLABS_PHONE_NUMBER_ID);
+// The agent made by the setup page (saved in the database), or one given in ELEVENLABS_* variables.
+export async function agentConfig(): Promise<AgentConfig | null> {
+  if (process.env.ELEVENLABS_AGENT_ID)
+    return {
+      agentId: process.env.ELEVENLABS_AGENT_ID,
+      phoneNumberId: process.env.ELEVENLABS_PHONE_NUMBER_ID ?? "",
+      webhookSecret: process.env.ELEVENLABS_WEBHOOK_SECRET ?? "",
+    };
+  const row = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'elevenlabs'");
+  return row ? JSON.parse(row.value) : null;
+}
 
-async function api<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    method: "POST",
+export const elevenLabsEnabled = async () => !!process.env.ELEVENLABS_API_KEY && !!(await agentConfig());
+
+export async function api<T>(method: string, path: string, body: unknown): Promise<T> {
+  const res = await fetch(`https://api.elevenlabs.io/v1${path}`, {
+    method,
     headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -24,7 +35,7 @@ async function api<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-// How to use the agent's tools (defined in scripts/elevenlabs-setup.mjs). The rest of the playbook is shared with Twilio.
+// How to use the agent's tools (defined in lib/elevenlabs-setup.ts). The rest of the playbook is shared with Twilio.
 const TOOL_RULES = `Tools
 - record_result: call it as soon as you know. "accepted" with the accepting physician, unit or bed, and report number; "declined" with their reason; "follow_up" for anything the team must do or answer (one call per item).
 - play_keypad_touch_tone for phone menus. skip_turn while on hold or a recording plays.
@@ -45,9 +56,10 @@ export const callVariables = (t: Transfer) => ({ transfer_id: String(t.id), phys
 
 export async function startAgentCall(t: Transfer, to: string) {
   const { prompt, dynamic_variables } = await agentBrief(t);
-  const res = await api<{ conversation_id?: string; callSid?: string }>("/convai/twilio/outbound-call", {
-    agent_id: process.env.ELEVENLABS_AGENT_ID,
-    agent_phone_number_id: process.env.ELEVENLABS_PHONE_NUMBER_ID,
+  const agent = (await agentConfig())!;
+  const res = await api<{ conversation_id?: string; callSid?: string }>("POST", "/convai/twilio/outbound-call", {
+    agent_id: agent.agentId,
+    agent_phone_number_id: agent.phoneNumberId,
     to_number: to,
     conversation_initiation_client_data: {
       dynamic_variables,
@@ -82,10 +94,11 @@ const conversationStart = (prompt: string, first_message: string, dynamic_variab
 });
 
 // Post-call webhook signature: header "t=<unix seconds>,v0=<hex HMAC-SHA256 of `${t}.${body}`>".
-export function isFromElevenLabs(header: string | null, body: string) {
+export async function isFromElevenLabs(header: string | null, body: string) {
   const parts = Object.fromEntries((header ?? "").split(",").map((p) => p.split("=") as [string, string]));
-  if (!parts.t || !parts.v0 || Date.now() / 1000 - Number(parts.t) > 30 * 60) return false;
-  const expected = createHmac("sha256", process.env.ELEVENLABS_WEBHOOK_SECRET ?? "").update(`${parts.t}.${body}`).digest("hex");
+  const secret = (await agentConfig())?.webhookSecret;
+  if (!secret || !parts.t || !parts.v0 || Date.now() / 1000 - Number(parts.t) > 30 * 60) return false;
+  const expected = createHmac("sha256", secret).update(`${parts.t}.${body}`).digest("hex");
   return parts.v0.length === expected.length && timingSafeEqual(Buffer.from(parts.v0), Buffer.from(expected));
 }
 

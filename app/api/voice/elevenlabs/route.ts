@@ -10,14 +10,14 @@ import { recordCallResult } from "@/lib/voice";
 //   find_transfer  -> tool: look up a transfer by the reference number the caller gave
 //   record_result  -> tool: accepted / declined / follow-up
 //   post_call      -> the call ended: transcript (signed with ELEVENLABS_WEBHOOK_SECRET)
-// All but post_call carry ?token={WEBHOOK_TOKEN}. scripts/elevenlabs-setup.mjs points the agent here.
+// All but post_call carry ?token={WEBHOOK_TOKEN}. lib/elevenlabs-setup.ts points the agent here.
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
   const body = await req.text();
 
   if (action === "post_call") {
-    if (!isFromElevenLabs(req.headers.get("elevenlabs-signature"), body)) return new Response("Forbidden", { status: 403 });
+    if (!(await isFromElevenLabs(req.headers.get("elevenlabs-signature"), body))) return new Response("Forbidden", { status: 403 });
     await savePostCall(JSON.parse(body));
     return new Response(null, { status: 204 });
   }
