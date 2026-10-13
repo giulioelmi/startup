@@ -16,6 +16,7 @@ function agentTools() {
     type: "webhook",
     name: "record_result",
     description: "Record what the transfer center decided, or something the team must follow up on. Call once per item.",
+    execution_mode: "async", // keep talking; don't wait for our server to answer
     api_schema: {
       url: hook("record_result"),
       method: "POST",
@@ -105,6 +106,13 @@ export async function setUpAgent() {
   const agent = await api<{ agent_id: string }>("POST", "/convai/agents/create", {
     name: "Transfer center caller",
     conversation_config: {
+      // Snappy turn-taking: answer as soon as they're likely done, and open within 2 s if they pick up and stay silent.
+      turn: {
+        initial_wait_time: 2,
+        turn_eagerness: "eager",
+        speculative_turn: true,
+        soft_timeout_config: { timeout_seconds: 2.5, message: "One moment.", disable_until_first_user_message: true },
+      },
       agent: {
         first_message: "",
         language: "en",

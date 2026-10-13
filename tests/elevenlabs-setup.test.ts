@@ -23,6 +23,7 @@ test("creates the agent with the Vercel variables and saves it, so calls use it 
   expect(calls.map(([path]) => path)).toEqual(["/convai/phone-numbers", "/workspace/webhooks", "/convai/agents/create", "/convai/phone-numbers/phnum_1"]);
   const agent = calls[2][1].conversation_config.agent.prompt;
   expect(agent.llm).toBe("claude-sonnet-5-5");
+  expect(calls[2][1].conversation_config.turn).toMatchObject({ initial_wait_time: 2, turn_eagerness: "eager" });
   expect(agent.tools.find((t: { name: string }) => t.name === "record_result").api_schema.url).toBe(
     "https://transfer.example.com/api/voice/elevenlabs?action=record_result&token=t",
   );
