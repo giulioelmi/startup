@@ -1,4 +1,4 @@
-import type { FhirResource, PatientRecord } from "./epic";
+import type { PatientRecord } from "./epic";
 import data from "./mimic-demo.json";
 
 // Fake demo patients built from the MIMIC-IV Clinical Database Demo by scripts/import-mimic.mjs.
@@ -24,9 +24,4 @@ export function getMimicRecord(id: string): PatientRecord {
   const r = records.find((x) => x.patient.id === id);
   if (!r) throw new Error(`No MIMIC demo patient ${id} (run npm run mimic:import, see README)`);
   return structuredClone(r);
-}
-
-export function searchMimic(q: { family?: string; given?: string; birthdate?: string }): FhirResource[] {
-  const starts = (v: string, s?: string) => !s || v.toLowerCase().startsWith(s.toLowerCase());
-  return patients.filter((p) => starts(p.name[0].family, q.family) && starts(p.name[0].given[0], q.given) && (!q.birthdate || p.birthDate === q.birthdate));
 }

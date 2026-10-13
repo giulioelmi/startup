@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { audit, one, run } from "@/lib/db";
 import { ehrName, getPatientRecord } from "@/lib/ehr";
 import { summarize } from "@/lib/summary";
-import { createTransfer, getTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
+import { createTransfer, deleteTransfer, getTransfer, moveTransfer, setRankingStatus, updateTransfer, type Transfer, type TransferDetails } from "@/lib/transfers";
 import { rankHospitals } from "@/lib/ranking";
 import { CAPABILITIES, deleteHospital, getHospital, saveHospital, type Capability, type Hospital } from "@/lib/hospitals";
 import { STEP_TYPES, type WorkflowStep } from "@/lib/workflow";
@@ -91,6 +91,17 @@ export async function setOutcome(transferId: number, f: FormData) {
     redirect(`/transfers/${transferId}?step=w0`); // on to the next hospital's workflow
   }
   revalidatePath(`/transfers/${transferId}`);
+}
+
+export async function moveInWorklist(transferId: number, direction: -1 | 1) {
+  await moveTransfer(transferId, direction);
+  revalidatePath("/");
+}
+
+export async function removeTransfer(transferId: number) {
+  await deleteTransfer(transferId);
+  await audit("user", "transfer.delete", transferId);
+  revalidatePath("/");
 }
 
 // ---------- Filled forms (the agent fills; people review) ----------
